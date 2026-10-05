@@ -1,0 +1,10 @@
+name: napari-labconstrictor
+display_name: LabConstrictor
+contributions:
+  commands:
+    - id: napari-labconstrictor.widget
+      title: LabConstrictor tools
+      python_name: napari_labconstrictor:LabConstrictorWidget
+  widgets:
+    - command: napari-labconstrictor.widget
+      display_name: LabConstrictor tools

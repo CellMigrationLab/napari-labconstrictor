@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "napari-labconstrictor"
+version = "0.1.0"
+description = "Run installed LabConstrictor apps from napari (one generic widget, forms generated from each tool's schema)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = ["labconstrictor-tools>=0.1", "napari", "magicgui", "qtpy", "numpy", "tifffile", "pint"]
+
+[project.optional-dependencies]
+test = ["napari[pyqt5]", "pandas", "scipy", "imageio"]   # a Qt backend, and what the example app needs
+
+[project.urls]
+Repository = "https://github.com/CellMigrationLab/napari-labconstrictor"
+
+[project.entry-points."napari.manifest"]
+napari-labconstrictor = "napari_labconstrictor:napari.yaml"
+
+[tool.setuptools]
+packages = ["napari_labconstrictor"]
+
+[tool.setuptools.package-data]
+napari_labconstrictor = ["napari.yaml"]
+
+[tool.black]
+line-length = 110
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501", "UP031", "UP032", "B905"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E402", "B007"]
