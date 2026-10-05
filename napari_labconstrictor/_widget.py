@@ -25,6 +25,7 @@ from ._workers import WorkerCache
 MAX_EXPORT_BYTES = 4 * 1024**3  # refuse to write a layer larger than this to a temporary TIFF
 CANCEL_GRACE_S = 3.0  # how long a tool gets to honour Cancel before its worker is killed
 _FINISH_TEXT = {"CANCELED": "cancelled"}
+_NO_RESULT_CODES = ("no_match", "no_result")  # an outcome ("nothing found"), not a fault: shown as a notice
 
 
 def _is_set(path):
@@ -379,7 +380,9 @@ class LabConstrictorWidget(QWidget):
         if task.status != "COMPLETE":
             shutil.rmtree(self._job_dir, ignore_errors=True)
             first_line = (task.error or "").splitlines()[0] if task.error else task.status
-            if task.status == "CRASHED" and getattr(task, "cancel_requested", False):
+            if task.status == "FAILED" and getattr(task, "code", None) in _NO_RESULT_CODES:
+                text = "⚠ " + first_line.split("] ", 1)[-1]
+            elif task.status == "CRASHED" and getattr(task, "cancel_requested", False):
                 text = "cancelled (worker stopped)"
             elif task.status == "CRASHED":
                 text = "✖ %s  - click Details… for the full report (log: %s)" % (first_line, log.log_path())
