@@ -24,7 +24,7 @@ from ._workers import WorkerCache
 
 MAX_EXPORT_BYTES = 4 * 1024**3  # refuse to write a layer larger than this to a temporary TIFF
 CANCEL_GRACE_S = 3.0  # how long a tool gets to honour Cancel before its worker is killed
-_FINISH_TEXT = {"CANCELED": "cancelled", "CRASHED": "cancelled (worker stopped)"}
+_FINISH_TEXT = {"CANCELED": "cancelled"}
 
 
 def _is_set(path):
@@ -48,6 +48,9 @@ class LabConstrictorWidget(QWidget):
         self.last_record = None
         self.last_details = ""
         self._request = {}
+        self._run_app = self._run_tool = (
+            None  # what the running task was started with (the choosers may change meanwhile)
+        )
         self.timings = {}
         self._workers = WorkerCache()
         self._signals = _Signals()
@@ -228,6 +231,10 @@ class LabConstrictorWidget(QWidget):
 
     # ---- run ----------------------------------------------------------
     def _launch(self, form_values):
+        if (
+            self.task is not None and not self.task.done.is_set()
+        ):  # a run is in progress: never start a second one
+            return
         job_dir = Path(tempfile.mkdtemp(prefix="lcin_"))
         try:
             inputs = self._export_inputs(form_values, job_dir)
@@ -239,19 +246,21 @@ class LabConstrictorWidget(QWidget):
             job_dir / "out"
         )  # host-owned: removed by the host whatever happens to the worker
         self._job_dir = job_dir
+        self._request = {k: v for k, v in inputs.items() if k != JOB_DIR_KEY}
+        self._run_app, self._run_tool = self.app_box.value, self.tool
         shown_inputs = {
             **form_values,
             **{n: FileInput(Path(e.value)) for n, e in self.file_sources.items() if _is_set(e.value)},
         }
-        self.presenter = ResultPresenter(self.viewer, self.app_box.value, shown_inputs)
+        self.presenter = ResultPresenter(self.viewer, self._run_app, shown_inputs)
         self._set_running(True)
         self._started = time.perf_counter()
         try:
-            self.worker = self._workers.acquire(self.app_box.value, reuse=self.reuse_box.isChecked())
+            self.worker = self._workers.acquire(self._run_app, reuse=self.reuse_box.isChecked())
         except (
             Exception
         ) as error:  # noqa: BLE001 - e.g. the app's Python is gone: say so instead of failing silently
-            log.error("napari: cannot start worker for %s", self.app_box.value, exc_info=True)
+            log.error("napari: cannot start worker for %s", self._run_app, exc_info=True)
             shutil.rmtree(job_dir, ignore_errors=True)
             self._set_running(False)
             self.status.setText("✖ %s" % error)
@@ -259,7 +268,7 @@ class LabConstrictorWidget(QWidget):
             self.details_button.setEnabled(True)
             return
         task = self.worker.task(
-            self.tool["id"],
+            self._run_tool["id"],
             inputs,
             on_update=lambda message, fraction: self._signals.progress.emit(message, fraction),
         )
@@ -309,6 +318,9 @@ class LabConstrictorWidget(QWidget):
             self.bar.setRange(0, 0)
             self.status.setText("starting worker…")
         self.cancel_button.setEnabled(running)
+        self.app_box.enabled = self.tool_box.enabled = (
+            not running
+        )  # the form must stay the one that was launched
         self.gui.call_button.enabled = not running
 
     def cancel(self, *_):
@@ -338,16 +350,20 @@ class LabConstrictorWidget(QWidget):
             "COMPLETE",
             "FAILED",
         )  # a cancelled or crashed worker may be mid-task: never reuse it
-        self._workers.release(self.app_box.value, self.worker, keep=self.reuse_box.isChecked() and healthy)
+        self._workers.release(self._run_app, self.worker, keep=self.reuse_box.isChecked() and healthy)
         if task.status != "COMPLETE":
             shutil.rmtree(self._job_dir, ignore_errors=True)
             first_line = (task.error or "").splitlines()[0] if task.error else task.status
-            self.status.setText(
-                _FINISH_TEXT.get(
+            if task.status == "CRASHED" and getattr(task, "cancel_requested", False):
+                text = "cancelled (worker stopped)"
+            elif task.status == "CRASHED":
+                text = "✖ %s  - click Details… for the full report (log: %s)" % (first_line, log.log_path())
+            else:
+                text = _FINISH_TEXT.get(
                     task.status,
                     "✖ %s  - click Details… for the full report (log: %s)" % (first_line, log.log_path()),
                 )
-            )
+            self.status.setText(text)
             return
         summaries = [self.presenter.show(result) for result in task.outputs["results"]]
         shutil.rmtree(
@@ -360,7 +376,7 @@ class LabConstrictorWidget(QWidget):
     def _record_run(self, task):
         stderr = "".join(self.worker.stderr)
         self.last_record = runs.record(
-            self.app_box.value, self.tool["id"], self._request, task, self.timings["run_wall_s"], stderr
+            self._run_app, self._run_tool["id"], self._request, task, self.timings["run_wall_s"], stderr
         )
         lines = [
             "status: %s" % task.status,
