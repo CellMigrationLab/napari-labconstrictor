@@ -80,6 +80,14 @@ expect(
     "synthetic:doubled" in [x.name for x in v.layers] and "rows" in w.tables,
     [x.name for x in v.layers],
 )
+expect(
+    "optional_string_is_unset_by_default",
+    "optional_string" in w.unset_toggles
+    and not w.unset_toggles["optional_string"].value
+    and not w.gui.optional_string.enabled
+    and "optional_string=None" in w.status.text(),
+    w.status.text(),
+)
 v.screenshot(str(EVIDENCE / "widget_kitchen_sink.png"), canvas_only=False)
 
 # worker reuse and restart

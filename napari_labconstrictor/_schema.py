@@ -6,7 +6,8 @@ from typing import Annotated
 
 _INT_RANGE = (-(10**9), 10**9)
 _FLOAT_RANGE = (-1e9, 1e9)
-_PATH_TYPES = ("table", "file")
+_PATH_TYPES = ("table", "file", "folder")
+_NULLABLE_SCALARS = ("integer", "float", "string", "choice")
 _LAYER_TYPES = ("image", "labels")
 
 
@@ -24,6 +25,9 @@ def _parameter(param, layer_classes):
     options["label"] = param["label"] + (" (%s)" % param["unit"] if param.get("unit") else "")
     if not param["required"] and kind in _LAYER_TYPES + _PATH_TYPES:
         annotation = annotation | None  # nullable widget
+    elif param.get("nullable") and kind in _NULLABLE_SCALARS:
+        annotation = annotation | None  # "unset" is a value: the widget gets a None state, and the request omits it
+        options["nullable"] = True
     default = param.get("default", inspect.Parameter.empty if param["required"] else None)
     return inspect.Parameter(
         param["name"],
@@ -38,7 +42,10 @@ def _annotation(param, layer_classes):
     if kind in _LAYER_TYPES:
         return layer_classes[kind], options
     if kind in _PATH_TYPES:
-        options["filter"] = "*.csv" if kind == "table" else "*"
+        if kind == "folder":
+            options["mode"] = "d"
+        else:
+            options["filter"] = "*.csv" if kind == "table" else "*"
         return Path, options
     if kind == "string":
         return str, options

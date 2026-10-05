@@ -43,6 +43,7 @@ class LabConstrictorWidget(QWidget):
         self.apps, self.schemas = {}, {}
         self.gui = None  # the magicgui form of the current tool
         self.file_sources = {}  # image parameter -> "or file" widget
+        self.unset_toggles = {}  # nullable parameter -> "set" checkbox
         self.task = self.worker = self.last_task = None
         self.presenter = None
         self.last_record = None
@@ -147,6 +148,7 @@ class LabConstrictorWidget(QWidget):
         self.description.setText(tool.get("description", ""))
         self.gui = self._make_form(tool)
         self.file_sources = self._add_file_sources(tool)
+        self.unset_toggles = self._add_unset_toggles(tool)
         self.form_holder.addWidget(self.gui.native)
         for param in tool["inputs"]:
             if param.get("pixel_size_of"):
@@ -159,6 +161,7 @@ class LabConstrictorWidget(QWidget):
             self.gui.native.setParent(None)
             self.gui = None
             self.file_sources = {}
+            self.unset_toggles = {}
 
     def _make_form(self, tool):
         from napari.layers import Image, Labels
@@ -193,6 +196,25 @@ class LabConstrictorWidget(QWidget):
             edit.changed.connect(toggled)
             sources[param["name"]] = edit
         return sources
+
+    def _add_unset_toggles(self, tool):
+        """A number or text that is optional and has no default may be left UNSET (the tool then receives None). Spin boxes
+        cannot show "nothing", so each gets a 'set' checkbox: unchecked = greyed out and left out of the request."""
+        toggles = {}
+        for param in tool["inputs"]:
+            if not param.get("nullable") or param["type"] not in ("integer", "float", "string", "choice"):
+                continue
+            widget = getattr(self.gui, param["name"])
+            if param["type"] == "string" and getattr(widget, "value", None) == "None":
+                widget.value = ""
+            toggle = mw.CheckBox(
+                value=False, text="set", label="  (optional)", tooltip="Leave unchecked to not set this value", gui_only=True
+            )
+            self.gui.insert(list(self.gui).index(widget) + 1, toggle)
+            widget.enabled = False
+            toggle.changed.connect(lambda checked, widget=widget: setattr(widget, "enabled", bool(checked)))
+            toggles[param["name"]] = toggle
+        return toggles
 
     def _refresh_layer_choices(self, *_):
         for widget in self.gui or []:
@@ -289,6 +311,9 @@ class LabConstrictorWidget(QWidget):
                     raise ValueError("'%s': file not found: %s" % (param["label"], path))
                 inputs[param["name"]] = str(path)
                 continue
+            toggle = self.unset_toggles.get(param["name"])
+            if toggle is not None and not toggle.value:  # nullable and not set: omit it
+                continue
             if value is None or (isinstance(value, Path) and str(value) in ("", ".")):
                 if param["required"]:
                     raise ValueError("'%s' is required" % param["label"])
@@ -306,7 +331,7 @@ class LabConstrictorWidget(QWidget):
                     )
                 imwrite(path, np.asarray(data))
                 inputs[param["name"]] = str(path)
-            elif param["type"] in ("table", "file"):
+            elif param["type"] in ("table", "file", "folder"):
                 inputs[param["name"]] = str(value)
             else:
                 inputs[param["name"]] = value
