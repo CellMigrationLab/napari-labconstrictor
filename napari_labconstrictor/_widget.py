@@ -403,6 +403,14 @@ class LabConstrictorWidget(QWidget):
 
     def closeEvent(self, event):  # noqa: N802 - Qt API
         self._reaper.stop()
+        if (
+            self.task is not None and not self.task.done.is_set()
+        ):  # closed during a run: stop it, do not leave worker or temp files
+            try:
+                self.worker.kill()
+            except Exception:  # noqa: BLE001 - best effort while closing
+                pass
+            shutil.rmtree(getattr(self, "_job_dir", ""), ignore_errors=True)
         self._workers.close_all()
         super().closeEvent(event)
 

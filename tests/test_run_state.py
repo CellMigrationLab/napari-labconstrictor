@@ -9,6 +9,7 @@ import time
 
 import _paths  # noqa: F401  (must come first)
 import napari
+import numpy as np
 from qtpy.QtWidgets import QApplication
 
 subprocess.run(
@@ -128,6 +129,35 @@ expect(
     "forced_kill_after_cancel_is_a_cancel", w.status.text() == "cancelled (worker stopped)", w.status.text()
 )
 expect("forced_kill_not_blamed_on_oom", "out of memory" not in w.last_task.error, w.last_task.error)
+
+# 6. the export cap is enforced with a readable message (a 4.9 GB virtual array: nothing is allocated)
+from pathlib import Path as _P  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+pick("other", "Image stats")
+huge = SimpleNamespace(data=np.broadcast_to(np.uint8(0), (70000, 70000)), name="huge", multiscale=False)
+try:
+    w._export_inputs({"image": huge}, _P(os.environ["LC_HOME"]))
+    message = ""
+except ValueError as error:
+    message = str(error)
+expect("export_cap_message", "huge" in message and "GB" in message, message)
+
+# 7. closing the widget during a run leaves no worker and no temp folder
+pick("other", "Slow with progress")
+w.gui.seconds.value = 30
+w.last_task = None
+w.gui()
+pump(1.5)
+job_dir, pid = w._job_dir, w.worker.proc.pid
+w.close()
+pump(1.5)
+expect("close_during_run_removes_temp", not job_dir.exists(), str(job_dir))
+expect(
+    "close_during_run_kills_worker",
+    subprocess.run(["kill", "-0", str(pid)], capture_output=True).returncode != 0,
+    pid,
+)
 
 # 5. an app whose Python disappeared after the scan is explained, not a bare KeyError
 pick("other", "Scalar echo")
