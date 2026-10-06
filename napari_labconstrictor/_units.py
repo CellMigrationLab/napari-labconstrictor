@@ -19,7 +19,9 @@ def microns_per_pixel_yx(layer):
     if scale_y == 1.0 and scale_x == 1.0:
         return None, False
     units = getattr(layer, "units", None)
-    unit_y, unit_x = (units[-2], units[-1]) if units and len(units) >= 2 else (units[-1] if units else None,) * 2
+    unit_y, unit_x = (
+        (units[-2], units[-1]) if units and len(units) >= 2 else (units[-1] if units else None,) * 2
+    )
     (y, assumed_y), (x, assumed_x) = _layer_microns(scale_y, unit_y), _layer_microns(scale_x, unit_x)
     return (y, x), assumed_y or assumed_x
 
