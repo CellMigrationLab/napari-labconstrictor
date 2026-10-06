@@ -19,7 +19,7 @@ from qtpy.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QProgressBar, QPushBu
 
 from ._results import COULD_NOT_DISPLAY, FileInput, ResultPresenter
 from ._schema import presentation_order, rule_satisfied, signature_from_schema
-from ._units import microns_from_tiff, microns_per_pixel
+from ._units import anisotropy_note, microns_per_pixel_yx, microns_yx_from_tiff
 from ._workers import WorkerCache
 
 MAX_EXPORT_BYTES = 4 * 1024**3  # refuse to write a layer larger than this to a temporary TIFF
@@ -155,7 +155,12 @@ class LabConstrictorWidget(QWidget):
             return
         started = time.perf_counter()
         self.description.setText(tool.get("description", ""))
-        self.gui = self._make_form(tool)
+        try:
+            self.gui = self._make_form(tool)
+        except ValueError as error:  # a schema this host cannot show (e.g. an unknown parameter type): say so, no guessed form
+            log.error("napari: cannot build the form for %s: %s", tool.get("id"), error)
+            self.status.setText("⚠ this tool cannot be shown: %s" % error)
+            return
         self.file_sources = self._add_file_sources(tool)
         self.unset_toggles = self._add_unset_toggles(tool)
         self._apply_presentation(tool)
@@ -309,18 +314,22 @@ class LabConstrictorWidget(QWidget):
             if pixel.value != auto_value[0]:
                 return
             if file_edit is not None and _is_set(file_edit.value):  # calibration stored in the file
-                microns = microns_from_tiff(file_edit.value)
-                if microns is not None:
-                    auto_value[0] = pixel.value = microns
+                yx = microns_yx_from_tiff(file_edit.value)
+                if yx is not None:
+                    auto_value[0] = pixel.value = yx[1]
+                    note = anisotropy_note(yx)
+                    if note:
+                        self.status.setText(note)
                 return
             layer = image.value
             if layer is None:
                 return
-            microns, assumed = microns_per_pixel(layer)
-            if microns is not None:
-                auto_value[0] = pixel.value = microns
+            yx, assumed = microns_per_pixel_yx(layer)
+            if yx is not None:
+                auto_value[0] = pixel.value = yx[1]
                 self.status.setText(
-                    "calibration assumed to be in µm (layer has no unit)" if assumed else self.status.text()
+                    anisotropy_note(yx)
+                    or ("calibration assumed to be in µm (layer has no unit)" if assumed else self.status.text())
                 )
 
         image.changed.connect(sync)

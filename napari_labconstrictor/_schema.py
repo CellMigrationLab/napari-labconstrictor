@@ -4,8 +4,8 @@ import inspect
 from pathlib import Path
 from typing import Annotated
 
-_INT_RANGE = (-(10**9), 10**9)
-_FLOAT_RANGE = (-1e9, 1e9)
+_INT_RANGE = (-(2**31), 2**31 - 1)  # what a Qt spin box can hold: used only when the schema gives no bound
+_FLOAT_RANGE = (-1e15, 1e15)
 _PATH_TYPES = ("table", "file", "folder")
 _NULLABLE_SCALARS = ("integer", "float", "string", "choice")
 _LAYER_TYPES = ("image", "labels")
@@ -81,6 +81,8 @@ def _annotation(param, layer_classes):
     if kind == "choice":
         options["choices"] = param["choices"]
         return str, options
+    if kind not in ("integer", "float"):
+        raise ValueError("parameter %r has the unknown type %r" % (param["name"], kind))
     is_int = kind == "integer"
     low, high = _INT_RANGE if is_int else _FLOAT_RANGE
     options["min"] = param.get("minimum", low)
