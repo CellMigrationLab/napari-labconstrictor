@@ -16,6 +16,10 @@ jobs:
       - name: Qt libraries (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb libegl1 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0
+      - name: Private virtualenv (Linux)
+        if: runner.os == 'Linux'
+        # the runner's own Python folder is world-writable, which the tools registry refuses by design
+        run: python -m venv "$RUNNER_TEMP/venv" && echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - run: pip install "git+https://github.com/CellMigrationLab/LabConstrictor-Tools" -e ".[test]"
       - name: Tests (Linux)
         if: runner.os == 'Linux'
@@ -27,6 +31,8 @@ jobs:
           xvfb-run -a python test_run_state.py
       - name: Tests (Windows/macOS)
         if: runner.os != 'Linux'
+        env:
+          QT_OPENGL: software
         working-directory: tests
         run: |
           python test_units.py
@@ -36,4 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install black ruff && black --check . && ruff check .
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install black==26.10.0 ruff==0.16.10 && black --check . && ruff check .

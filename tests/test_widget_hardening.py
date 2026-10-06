@@ -1,5 +1,6 @@
 """Widget failure paths: a start that fails half way, results that cannot be shown, a disk that fills while exporting,
-Rescan during a run, duplicate tool labels, nullable yes/no parameters, an image given as a file driving enabled_when."""
+Rescan during a run, duplicate tool labels, nullable yes/no parameters, an image given as a file driving enabled_when.
+"""
 
 import glob
 import os
@@ -83,6 +84,7 @@ expect("second_tool_is_the_one_selected", w.tool["id"] == "seg_b", w.tool and w.
 pick("hard", "Segment (seg_a)")
 expect("first_tool_is_the_one_selected", w.tool["id"] == "seg_a", w.tool and w.tool["id"])
 
+
 # 2. a failure after the worker was acquired undoes the start
 class FakeWorker:
     alive = True
@@ -105,8 +107,15 @@ w.last_task = None
 w.gui()
 pump(0.5)
 w._workers.acquire = real_acquire
-expect("failed_start_reports_error", w.status.text().startswith("✖") and "died" in w.status.text(), w.status.text())
-expect("failed_start_unlocks_form", w.gui.call_button.enabled and w.app_box.enabled and w.rescan_button.isEnabled())
+expect(
+    "failed_start_reports_error",
+    w.status.text().startswith("✖") and "died" in w.status.text(),
+    w.status.text(),
+)
+expect(
+    "failed_start_unlocks_form",
+    w.gui.call_button.enabled and w.app_box.enabled and w.rescan_button.isEnabled(),
+)
 expect("failed_start_releases_worker", fake.closed)
 expect("failed_start_leaves_no_task", w.task is None)
 expect("failed_start_removes_temp", input_dirs() == before, input_dirs() - before)
@@ -128,13 +137,19 @@ w.last_task = None
 w.gui()
 wait()
 _widget.ResultPresenter.show = real_show
-expect("unshowable_result_not_success", w.status.text().startswith("✖") and "done" not in w.status.text(), w.status.text())
+expect(
+    "unshowable_result_not_success",
+    w.status.text().startswith("✖") and "done" not in w.status.text(),
+    w.status.text(),
+)
 expect("unshowable_result_removes_temp", not w._job_dir.exists(), str(w._job_dir))
 expect("unshowable_result_unlocks", w.gui.call_button.enabled and w.app_box.enabled)
 expect("unshowable_result_explained", "cannot draw this result" in w.last_details, w.last_details[:300])
 
 # 3b. a result the presenter itself fails on (it reports instead of raising) is a warning, not a plain success
-real_values = _widget.ResultPresenter.__dict__["_values"]  # the staticmethod object itself, so it can be put back as it was
+real_values = _widget.ResultPresenter.__dict__[
+    "_values"
+]  # the staticmethod object itself, so it can be put back as it was
 
 
 def bad_values(self, result):
@@ -147,7 +162,11 @@ w.last_task = None
 w.gui()
 wait()
 _widget.ResultPresenter._values = real_values
-expect("display_failure_is_a_warning", w.status.text().startswith("⚠") and "could not be shown" in w.status.text(), w.status.text())
+expect(
+    "display_failure_is_a_warning",
+    w.status.text().startswith("⚠") and "could not be shown" in w.status.text(),
+    w.status.text(),
+)
 expect("display_failure_in_details", "bad table" in w.last_details, w.last_details[-300:])
 
 # 4. Rescan and Restart are off while a task runs, and a rescan afterwards still works
@@ -211,8 +230,16 @@ w.worker.stderr.append("OUTPUT OF AN EARLIER RUN\n")
 w.last_task = None
 w.gui()
 wait()
-expect("details_show_only_this_runs_output", "OUTPUT OF AN EARLIER RUN" not in w.last_details, w.last_details[-300:])
-expect("details_have_no_log_tail", "log (tail)" not in w.last_details and "log file:" in w.last_details, w.last_details[-300:])
+expect(
+    "details_show_only_this_runs_output",
+    "OUTPUT OF AN EARLIER RUN" not in w.last_details,
+    w.last_details[-300:],
+)
+expect(
+    "details_have_no_log_tail",
+    "log (tail)" not in w.last_details and "log file:" in w.last_details,
+    w.last_details[-300:],
+)
 
 # 8. closing the viewer stops the workers it keeps between runs (not only the end of the Python process)
 pick("synthetic", "Scalar echo")
@@ -228,7 +255,12 @@ def alive(pid):
         os.kill(pid, 0)
     except OSError:
         return False
-    return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()[:1] != "Z"
+    return (
+        subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()[
+            :1
+        ]
+        != "Z"
+    )
 
 
 v.close()

@@ -35,7 +35,9 @@ class Calibration(unittest.TestCase):
 
     def test_a_tiff_with_different_y_and_x_resolution_keeps_both(self):
         path = Path(tempfile.mkdtemp()) / "a.tif"
-        tifffile.imwrite(path, np.zeros((4, 4), np.uint8), imagej=True, resolution=(4.0, 2.0), metadata={"unit": "um"})
+        tifffile.imwrite(
+            path, np.zeros((4, 4), np.uint8), imagej=True, resolution=(4.0, 2.0), metadata={"unit": "um"}
+        )
         self.assertEqual(_units.microns_yx_from_tiff(path), (0.5, 0.25))
         self.assertEqual(_units.microns_from_tiff(path), 0.25)
         self.assertEqual(_results.FileInput(path).scale, (0.5, 0.25))  # not 0.25 twice
@@ -67,7 +69,9 @@ class Presenter(unittest.TestCase):
         viewer = SimpleNamespace(
             add_image=lambda data, **kw: self.shown.append(("image", data.shape)),
             add_labels=lambda data, **kw: self.shown.append(("labels", data.shape)),
-            window=SimpleNamespace(add_dock_widget=lambda widget, **kw: self.shown.append(("dock", widget.rowCount()))),
+            window=SimpleNamespace(
+                add_dock_widget=lambda widget, **kw: self.shown.append(("dock", widget.rowCount()))
+            ),
         )
         self.presenter = _results.ResultPresenter(viewer, "app", {})
         self.dir = Path(tempfile.mkdtemp())
@@ -83,7 +87,9 @@ class Presenter(unittest.TestCase):
         self.assertIn("does not exist", text)
         existing = self.dir / "here.txt"
         existing.write_text("x")
-        self.assertEqual(self.presenter.show({"type": "file", "name": "r", "path": str(existing)}), "file: %s" % existing)
+        self.assertEqual(
+            self.presenter.show({"type": "file", "name": "r", "path": str(existing)}), "file: %s" % existing
+        )
 
     def test_an_image_larger_than_the_limit_is_refused_before_loading(self):
         path = self.dir / "big.tif"

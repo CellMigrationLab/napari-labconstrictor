@@ -62,10 +62,19 @@ w.tool_box.value = "Probe"
 pump(0.5)
 names = [x.name for x in w.gui if getattr(x, "name", None) and x.name != "call_button"]
 expect("grouped_parameters_are_together", names.index("method") == names.index("mode") + 1, names)
-expect("advanced_parameters_come_last", names[-2:] == ["fixed_seed", "seed"] or names[-3:-1] == ["fixed_seed", "seed"], names)
-headings = [x.value for x in w.gui if type(x).__name__ == "Label" and x.value in ("Segmentation", "Images", "Seed")]
+expect(
+    "advanced_parameters_come_last",
+    names[-2:] == ["fixed_seed", "seed"] or names[-3:-1] == ["fixed_seed", "seed"],
+    names,
+)
+headings = [
+    x.value for x in w.gui if type(x).__name__ == "Label" and x.value in ("Segmentation", "Images", "Seed")
+]
 expect("group_headings_in_order", headings == ["Segmentation", "Images", "Seed"], headings)
-expect("parameter_named_like_a_container_method_works", "count" in w.unset_toggles and w.gui["count"].enabled is False)
+expect(
+    "parameter_named_like_a_container_method_works",
+    "count" in w.unset_toggles and w.gui["count"].enabled is False,
+)
 expect("advanced_toggle_exists", w.advanced_toggle is not None and not w.advanced_toggle.value)
 expect("advanced_hidden_by_default", not shown(w.gui.fixed_seed) and not shown(w.gui.seed))
 w.advanced_toggle.value = True
@@ -96,7 +105,11 @@ while w.last_task is None and time.time() < end:
     time.sleep(0.05)
 pump(0.8)
 v.screenshot(str(EVIDENCE / "widget_presentation.png"), canvas_only=False)
-expect("run_receives_the_values", w.last_task.status == "COMPLETE" and "seed=11" in w.status.text(), w.status.text())
+expect(
+    "run_receives_the_values",
+    w.last_task.status == "COMPLETE" and "seed=11" in w.status.text(),
+    w.status.text(),
+)
 
 print(json.dumps(report, indent=2))
 print("FAILURES:", failures or "none")
