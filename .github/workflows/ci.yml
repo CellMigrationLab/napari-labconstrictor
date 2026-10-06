@@ -18,8 +18,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y xvfb libegl1 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0
       - name: Private virtualenv (Linux)
         if: runner.os == 'Linux'
-        # the runner's own Python folder is world-writable, which the tools registry refuses by design
-        run: python -m venv "$RUNNER_TEMP/venv" && echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+        # the runner's own Python folder and binary are world-writable, which the tools registry refuses by design: use a private copy, not a symlink
+        run: python -m venv --copies "$RUNNER_TEMP/venv" && echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - run: pip install "git+https://github.com/CellMigrationLab/LabConstrictor-Tools" -e ".[test]"
       - name: Tests (Linux)
         if: runner.os == 'Linux'
