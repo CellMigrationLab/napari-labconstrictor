@@ -11,9 +11,34 @@ _NULLABLE_SCALARS = ("integer", "float", "string", "choice")
 _LAYER_TYPES = ("image", "labels")
 
 
+def presentation_order(tool):
+    """The tool with its inputs in the order the form shows them: parameters of one `group` together (where the group first
+    appears), `advanced` ones after all the others. Without group/advanced hints the tool is returned unchanged."""
+    inputs = tool["inputs"]
+    if not any(p.get("group") or p.get("advanced") for p in inputs):
+        return tool
+    first = {}
+
+    def rank(index, p):
+        group = p.get("group")
+        if not group:
+            return index
+        return first.setdefault((bool(p.get("advanced")), group), index)
+
+    order = sorted(enumerate(inputs), key=lambda ip: (bool(ip[1].get("advanced")), rank(*ip), ip[0]))
+    return {**tool, "inputs": [p for _, p in order]}
+
+
+def rule_satisfied(rule, value):
+    """enabled_when: `equals` given = the value is one of them; otherwise the controlling parameter is set / true."""
+    if "equals" in rule:
+        return value in rule["equals"]
+    return value is not None and value is not False and value != ""
+
+
 def signature_from_schema(tool, layer_classes):
     """Build the signature for one tool. `layer_classes` maps 'image'/'labels' to napari layer classes."""
-    parameters = [_parameter(p, layer_classes) for p in tool["inputs"]]
+    parameters = [_parameter(p, layer_classes) for p in presentation_order(tool)["inputs"]]
     return inspect.Signature(parameters)
 
 
