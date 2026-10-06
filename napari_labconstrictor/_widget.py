@@ -18,7 +18,7 @@ from qtpy.QtCore import QObject, QTimer, Signal
 from qtpy.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
 from ._results import FileInput, ResultPresenter
-from ._schema import signature_from_schema
+from ._schema import presentation_order, rule_satisfied, signature_from_schema
 from ._units import microns_from_tiff, microns_per_pixel
 from ._workers import WorkerCache
 
@@ -44,6 +44,8 @@ class LabConstrictorWidget(QWidget):
         self.gui = None  # the magicgui form of the current tool
         self.file_sources = {}  # image parameter -> "or file" widget
         self.unset_toggles = {}  # nullable parameter -> "set" checkbox
+        self.advanced_toggle = None  # "Show advanced settings" checkbox (only when a tool has advanced parameters)
+        self._members = {}  # parameter -> its widgets (value widget, "or file" row, "set" checkbox)
         self.task = self.worker = self.last_task = None
         self.presenter = None
         self.last_record = None
@@ -149,6 +151,7 @@ class LabConstrictorWidget(QWidget):
         self.gui = self._make_form(tool)
         self.file_sources = self._add_file_sources(tool)
         self.unset_toggles = self._add_unset_toggles(tool)
+        self._apply_presentation(tool)
         self.form_holder.addWidget(self.gui.native)
         for param in tool["inputs"]:
             if param.get("pixel_size_of"):
@@ -162,6 +165,7 @@ class LabConstrictorWidget(QWidget):
             self.gui = None
             self.file_sources = {}
             self.unset_toggles = {}
+            self.advanced_toggle, self._members = None, {}
 
     def _make_form(self, tool):
         from napari.layers import Image, Labels
@@ -180,7 +184,7 @@ class LabConstrictorWidget(QWidget):
         for param in tool["inputs"]:
             if param["type"] not in ("image", "labels"):
                 continue
-            layer_widget = getattr(self.gui, param["name"])
+            layer_widget = self.gui[param["name"]]
             edit = mw.FileEdit(
                 mode="r",
                 nullable=True,
@@ -190,10 +194,7 @@ class LabConstrictorWidget(QWidget):
             )
             self.gui.insert(list(self.gui).index(layer_widget) + 1, edit)
 
-            def toggled(*_, edit=edit, layer_widget=layer_widget):
-                layer_widget.enabled = not _is_set(edit.value)
-
-            edit.changed.connect(toggled)
+            edit.changed.connect(lambda *_: self._refresh_enabled())
             sources[param["name"]] = edit
         return sources
 
@@ -204,7 +205,7 @@ class LabConstrictorWidget(QWidget):
         for param in tool["inputs"]:
             if not param.get("nullable") or param["type"] not in ("integer", "float", "string", "choice"):
                 continue
-            widget = getattr(self.gui, param["name"])
+            widget = self.gui[param["name"]]
             if param["type"] == "string" and getattr(widget, "value", None) == "None":
                 widget.value = ""
             toggle = mw.CheckBox(
@@ -212,9 +213,74 @@ class LabConstrictorWidget(QWidget):
             )
             self.gui.insert(list(self.gui).index(widget) + 1, toggle)
             widget.enabled = False
-            toggle.changed.connect(lambda checked, widget=widget: setattr(widget, "enabled", bool(checked)))
+            toggle.changed.connect(lambda *_: self._refresh_enabled())
             toggles[param["name"]] = toggle
         return toggles
+
+    # ---- presentation hints: group headings, advanced settings, enabled_when ----
+    def _apply_presentation(self, tool):
+        inputs = presentation_order(tool)["inputs"]
+        self._members = {
+            p["name"]: [
+                w
+                for w in (self.gui[p["name"]], self.file_sources.get(p["name"]), self.unset_toggles.get(p["name"]))
+                if w is not None
+            ]
+            for p in inputs
+        }
+        advanced_widgets, previous_group = [], None
+        for p in inputs:
+            first = self._members[p["name"]][0]
+            if p.get("advanced") and self.advanced_toggle is None:
+                self.advanced_toggle = mw.CheckBox(
+                    value=False, text="Show advanced settings", label="", gui_only=True
+                )
+                self.gui.insert(list(self.gui).index(first), self.advanced_toggle)
+                self.advanced_toggle.changed.connect(
+                    lambda shown: [setattr(w, "visible", bool(shown)) for w in advanced_widgets]
+                )
+            group = p.get("group")
+            if group and group != previous_group:
+                heading = mw.Label(value=group, label="")
+                heading.native.setStyleSheet("font-weight: bold; padding-top: 6px;")
+                self.gui.insert(list(self.gui).index(first), heading)
+                if p.get("advanced"):
+                    advanced_widgets.append(heading)
+            previous_group = group or previous_group
+            if p.get("advanced"):
+                advanced_widgets.extend(self._members[p["name"]])
+        for widget in advanced_widgets:
+            widget.visible = False
+        for p in inputs:  # a parameter's rule is re-evaluated whenever its controlling parameter changes
+            rule = p.get("enabled_when")
+            if rule:
+                controller = self.gui[rule["param"]]
+                controller.changed.connect(lambda *_: self._refresh_enabled())
+        self._refresh_enabled()
+
+    def _control_value(self, name):
+        toggle = self.unset_toggles.get(name)
+        if toggle is not None and not toggle.value:
+            return None  # a nullable parameter that is not "set"
+        return self.gui[name].value
+
+    def _refresh_enabled(self):
+        """One place decides what is greyed out: a failed enabled_when rule, an unticked 'set', or an image given as a file."""
+        tool = self.tool
+        if not tool or self.gui is None:
+            return
+        for p in tool["inputs"]:
+            name = p["name"]
+            rule = p.get("enabled_when")
+            applies = rule is None or rule_satisfied(rule, self._control_value(rule["param"]))
+            if name in self.file_sources:  # image/labels: the layer chooser yields to a chosen file
+                self.gui[name].enabled = applies and not _is_set(self.file_sources[name].value)
+                self.file_sources[name].enabled = applies
+            elif name in self.unset_toggles:
+                self.unset_toggles[name].enabled = applies
+                self.gui[name].enabled = applies and bool(self.unset_toggles[name].value)
+            else:
+                self.gui[name].enabled = applies
 
     def _refresh_layer_choices(self, *_):
         for widget in self.gui or []:
@@ -223,7 +289,7 @@ class LabConstrictorWidget(QWidget):
 
     def _link_calibration(self, image_name, pixel_name):
         """Pixel-size field follows the layer chosen for its image - until the user edits it."""
-        image, pixel = getattr(self.gui, image_name), getattr(self.gui, pixel_name)
+        image, pixel = self.gui[image_name], self.gui[pixel_name]
         auto_value = [pixel.value]
 
         file_edit = self.file_sources.get(image_name)
