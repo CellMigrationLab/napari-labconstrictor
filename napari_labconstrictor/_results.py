@@ -3,7 +3,10 @@
 import csv
 
 import numpy as np
+from labconstrictor_tools import log
 from qtpy.QtWidgets import QTableWidget, QTableWidgetItem
+
+COULD_NOT_DISPLAY = "(could not display "
 
 
 class FileInput:
@@ -41,7 +44,8 @@ class ResultPresenter:
         try:
             return self._handlers[result["type"]](result) or ""
         except Exception as error:  # noqa: BLE001 - a display problem must not hide the other results
-            return "(could not display %s: %s)" % (result["type"], error)
+            log.error("napari: could not display a %s result", result["type"], exc_info=True)
+            return "%s%s: %s)" % (COULD_NOT_DISPLAY, result["type"], error)
 
     def _layer_name(self, result):
         return "%s:%s" % (self.app, result["name"])

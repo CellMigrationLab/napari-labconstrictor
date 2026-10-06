@@ -54,6 +54,8 @@ def _parameter(param, layer_classes):
         annotation = annotation | None  # "unset" is a value: the widget gets a None state, and the request omits it
         options["nullable"] = True
     default = param.get("default", inspect.Parameter.empty if param["required"] else None)
+    if kind == "boolean" and default is None:
+        default = False  # a check box cannot hold None; the form's "set" box decides whether the value is sent at all
     return inspect.Parameter(
         param["name"],
         inspect.Parameter.KEYWORD_ONLY,
