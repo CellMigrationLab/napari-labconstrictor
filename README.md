@@ -34,6 +34,7 @@ registers each app; for a manual registration see the Tools repository: `labcons
     pip install -e ".[test]"                       # also install labconstrictor-tools (see above)
     cd tests
     python test_units.py
+    QT_QPA_PLATFORM=offscreen python test_results_and_workers.py   # per-axis calibration, result display limits, worker cache
     xvfb-run -a python test_widget.py              # on Linux without a display; elsewhere run directly
     xvfb-run -a python test_file_sources.py
     xvfb-run -a python test_run_state.py

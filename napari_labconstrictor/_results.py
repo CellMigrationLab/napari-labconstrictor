@@ -1,22 +1,25 @@
 """Show typed tool results in napari. Switches on the result *type* only; knows nothing about any app."""
 
 import csv
+from pathlib import Path
 
 import numpy as np
 from labconstrictor_tools import log
 from qtpy.QtWidgets import QTableWidget, QTableWidgetItem
 
 COULD_NOT_DISPLAY = "(could not display "
+MAX_DISPLAY_BYTES = 4 * 1024**3  # a result image larger than this (uncompressed) is not loaded into the viewer
+MAX_TABLE_ROWS = 100_000  # rows shown in a table dock; the file itself always has all of them
 
 
 class FileInput:
     """Stands in for a layer when an image parameter was given as a file (needed to place affine results)."""
 
     def __init__(self, path):
-        from ._units import microns_from_tiff
+        from ._units import microns_yx_from_tiff
 
         self.path, self.name = path, getattr(path, "name", str(path))
-        self.scale = (microns_from_tiff(path) or 1.0,) * 2
+        self.scale = microns_yx_from_tiff(path) or (1.0, 1.0)  # (y, x)
 
     @property
     def data(self):
@@ -41,19 +44,28 @@ class ResultPresenter:
         }
 
     def show(self, result):
+        kind = result.get("type", "<no type>") if isinstance(result, dict) else "<not an object>"
         try:
-            return self._handlers[result["type"]](result) or ""
+            return self._handlers[kind](result) or ""
         except Exception as error:  # noqa: BLE001 - a display problem must not hide the other results
-            log.error("napari: could not display a %s result", result["type"], exc_info=True)
-            return "%s%s: %s)" % (COULD_NOT_DISPLAY, result["type"], error)
+            log.error("napari: could not display a %s result", kind, exc_info=True)
+            return "%s%s: %s)" % (COULD_NOT_DISPLAY, kind, repr(error) if isinstance(error, KeyError) else error)
 
     def _layer_name(self, result):
         return "%s:%s" % (self.app, result["name"])
 
     def _image(self, result):
-        from tifffile import imread
+        import tifffile
 
-        data = imread(result["path"])
+        with tifffile.TiffFile(result["path"]) as tif:  # look before loading: a huge result must not freeze the viewer
+            series = tif.series[0]
+            size = int(np.prod(series.shape)) * np.dtype(series.dtype).itemsize
+        if size > MAX_DISPLAY_BYTES:
+            raise ValueError(
+                "the image is %.1f GB; showing more than %.0f GB is not supported (it is in %s)"
+                % (size / 1024**3, MAX_DISPLAY_BYTES / 1024**3, result["path"])
+            )
+        data = tifffile.imread(result["path"])
         add = self.viewer.add_labels if result["type"] == "labels" else self.viewer.add_image
         add(data, name=self._layer_name(result))
 
@@ -76,8 +88,12 @@ class ResultPresenter:
         )
 
     def _table(self, result):
+        import itertools
+
         with open(result["path"], encoding="utf-8", newline="") as handle:
-            rows = list(csv.reader(handle))
+            reader = csv.reader(handle)
+            rows = list(itertools.islice(reader, MAX_TABLE_ROWS + 1))  # header + the rows that are shown
+            hidden = sum(1 for _ in reader)  # counted, not kept
         self.tables[result["name"]] = rows
         widget = QTableWidget(len(rows) - 1, len(rows[0]))
         widget.setHorizontalHeaderLabels(rows[0])
@@ -85,7 +101,8 @@ class ResultPresenter:
             for j, cell in enumerate(row):
                 widget.setItem(i, j, QTableWidgetItem(cell))
         self.viewer.window.add_dock_widget(widget, name=result["name"], area="bottom")
-        return "table '%s' (%d rows)" % (result["name"], len(rows) - 1)
+        shown = "%d rows" % (len(rows) - 1) if not hidden else "%d rows, first %d shown" % (len(rows) - 1 + hidden, len(rows) - 1)
+        return "table '%s' (%s)" % (result["name"], shown)
 
     @staticmethod
     def _values(result):
@@ -96,4 +113,6 @@ class ResultPresenter:
 
     @staticmethod
     def _file(result):
+        if not Path(result["path"]).is_file():
+            raise FileNotFoundError("the tool reported the file %s but it does not exist" % result["path"])
         return "file: " + result["path"]
