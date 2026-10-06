@@ -31,6 +31,22 @@ subprocess.run(
     capture_output=True,
 )  # fmt: skip  (a second app, so that mixing them up is detectable)
 
+import tempfile
+from pathlib import Path
+
+_nomatch = Path(tempfile.mkdtemp(prefix="lcnomatch_"))
+(_nomatch / "nomatch_lc_tools.py").write_text(
+    "from labconstrictor_tools import Scalars, ToolError, tool\n"
+    "@tool('Find it')\n"
+    "def find_it() -> Scalars:\n"
+    "    raise ToolError('no_match', 'No match found: try another setting.')\n"
+)
+subprocess.run(
+    [sys.executable, "-m", "labconstrictor_tools", "register", "--name", "nomatch", "--prefix", sys.prefix,
+     "--module", "nomatch_lc_tools", "--pythonpath", str(_nomatch)],
+    check=True, capture_output=True,
+)  # fmt: skip
+
 v = napari.Viewer(show=True)
 qa = QApplication.instance()
 _, w = v.window.add_plugin_dock_widget("napari-labconstrictor", "LabConstrictor tools")
@@ -176,6 +192,24 @@ expect(
     w.status.text(),
 )
 expect("ui_usable_after_start_failure", w.gui.call_button.enabled and w.app_box.enabled, "")
+
+w.rescan()
+w.app_box.value = "nomatch"
+pump(0.3)
+w.tool_box.value = "Find it"
+pump(0.3)
+w.last_task = None
+w.gui()
+_deadline = time.time() + 60
+while w.last_task is None and time.time() < _deadline:
+    qa.processEvents()
+    time.sleep(0.05)
+pump(0.8)
+expect(
+    "no_match_is_a_notice_not_an_error",
+    w.status.text() == "⚠ No match found: try another setting." and w.gui.call_button.enabled,
+    w.status.text(),
+)
 
 w._workers.close_all()
 pump(1.0)
