@@ -12,6 +12,7 @@ from pathlib import Path
 import _paths  # noqa: F401  (must come first)
 import napari
 import numpy as np
+from labconstrictor_tools import client
 from qtpy.QtWidgets import QApplication
 
 _app = Path(tempfile.mkdtemp(prefix="lchard_"))
@@ -86,7 +87,7 @@ expect("first_tool_is_the_one_selected", w.tool["id"] == "seg_a", w.tool and w.t
 class FakeWorker:
     alive = True
     closed = False
-    stderr = []
+    stderr = client._Tail()  # what a real worker has
 
     def task(self, *args, **kwargs):
         raise BrokenPipeError("the worker died before the request was sent")
@@ -200,6 +201,17 @@ tifffile.imwrite(tif, np.zeros((8, 8), np.uint8))
 w.file_sources["image"].value = tif
 pump(0.3)
 expect("gated_enabled_by_file_image", w.gui.x.enabled)
+
+# 7b. Details after a run on a kept worker show the output of THAT run only
+pick("synthetic", "Scalar echo")
+w.last_task = None
+w.gui()
+wait()
+w.worker.stderr.append("OUTPUT OF AN EARLIER RUN\n")
+w.last_task = None
+w.gui()
+wait()
+expect("details_show_only_this_runs_output", "OUTPUT OF AN EARLIER RUN" not in w.last_details, w.last_details[-300:])
 
 # 8. closing the viewer stops the workers it keeps between runs (not only the end of the Python process)
 pick("synthetic", "Scalar echo")

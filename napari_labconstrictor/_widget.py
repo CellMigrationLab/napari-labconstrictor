@@ -111,6 +111,7 @@ class LabConstrictorWidget(QWidget):
         self.details_button.clicked.connect(self._show_details)
         self.rescan_button.clicked.connect(self.rescan)
         self.restart_button.clicked.connect(lambda *_: self._workers.discard(self.app_box.value))
+        self._stderr_mark: int | None = 0  # how much worker output existed when the current run started
         self._reaper = QTimer(self)
         self._reaper.timeout.connect(self._workers.reap_idle)
         self._reaper.start(30_000)
@@ -375,6 +376,7 @@ class LabConstrictorWidget(QWidget):
         try:
             worker = self._workers.acquire(self._run_app, reuse=self.reuse_box.isChecked())
             self.worker = worker
+            self._stderr_mark = getattr(worker.stderr, "total", None)  # None with an older labconstrictor-tools: then the whole tail is shown
             task = worker.task(
                 self._run_tool["id"],
                 inputs,
@@ -515,6 +517,10 @@ class LabConstrictorWidget(QWidget):
 
     def _record_run(self, task):
         stderr = "".join(self.worker.stderr)
+        total = getattr(self.worker.stderr, "total", None)
+        if total is not None and self._stderr_mark is not None:  # a kept worker has output of earlier runs: not part of this one
+            fresh = total - self._stderr_mark
+            stderr = stderr[-fresh:] if fresh > 0 else ""
         self.last_record = runs.record(
             self._run_app, self._run_tool["id"], self._request, task, self.timings["run_wall_s"], stderr
         )
