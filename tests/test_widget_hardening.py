@@ -134,7 +134,7 @@ expect("unshowable_result_unlocks", w.gui.call_button.enabled and w.app_box.enab
 expect("unshowable_result_explained", "cannot draw this result" in w.last_details, w.last_details[:300])
 
 # 3b. a result the presenter itself fails on (it reports instead of raising) is a warning, not a plain success
-real_values = _widget.ResultPresenter._values
+real_values = _widget.ResultPresenter.__dict__["_values"]  # the staticmethod object itself, so it can be put back as it was
 
 
 def bad_values(self, result):
@@ -212,6 +212,7 @@ w.last_task = None
 w.gui()
 wait()
 expect("details_show_only_this_runs_output", "OUTPUT OF AN EARLIER RUN" not in w.last_details, w.last_details[-300:])
+expect("details_have_no_log_tail", "log (tail)" not in w.last_details and "log file:" in w.last_details, w.last_details[-300:])
 
 # 8. closing the viewer stops the workers it keeps between runs (not only the end of the Python process)
 pick("synthetic", "Scalar echo")

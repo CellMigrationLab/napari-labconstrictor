@@ -396,7 +396,7 @@ class LabConstrictorWidget(QWidget):
     def _show_failure(self, text, error):
         """A failure that never reached a task: status line plus the Details report."""
         self.status.setText("✖ %s" % text)
-        self.last_details = "%s\n\nlog file: %s\n%s" % (error, log.log_path(), log.tail(40))
+        self.last_details = "%s\n\nlog file: %s" % (error, log.log_path())  # the file holds the full story; its tail may be of other runs
         self.details_button.setEnabled(True)
 
     def _export_inputs(self, form_values, job_dir):
@@ -472,6 +472,8 @@ class LabConstrictorWidget(QWidget):
         self.status.setText(message or "")
 
     def _on_done(self, task):
+        if task is not self.task:  # a late signal of a run that is no longer the current one: never touch the current run's files
+            return
         self.last_task = task
         self.timings["run_wall_s"] = time.perf_counter() - self._started
         self._set_running(False)
@@ -534,7 +536,7 @@ class LabConstrictorWidget(QWidget):
             lines += ["", task.traceback]
         if stderr.strip():
             lines += ["", "worker output (tail):", stderr[-3000:]]
-        lines += ["", "log file: %s" % log.log_path(), "log (tail):", log.tail(40)]
+        lines += ["", "log file: %s" % log.log_path()]  # not its tail: that would show earlier runs
         self.last_details = "\n".join(lines)
         self.details_button.setEnabled(True)
 
