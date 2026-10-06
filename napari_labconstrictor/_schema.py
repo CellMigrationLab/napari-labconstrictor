@@ -13,7 +13,8 @@ _LAYER_TYPES = ("image", "labels")
 
 def presentation_order(tool):
     """The tool with its inputs in the order the form shows them: parameters of one `group` together (where the group first
-    appears), `advanced` ones after all the others. Without group/advanced hints the tool is returned unchanged."""
+    appears), `advanced` ones after all the others. Without group/advanced hints the tool is returned unchanged.
+    """
     inputs = tool["inputs"]
     if not any(p.get("group") or p.get("advanced") for p in inputs):
         return tool
@@ -51,7 +52,9 @@ def _parameter(param, layer_classes):
     if not param["required"] and kind in _LAYER_TYPES + _PATH_TYPES:
         annotation = annotation | None  # nullable widget
     elif param.get("nullable") and kind in _NULLABLE_SCALARS:
-        annotation = annotation | None  # "unset" is a value: the widget gets a None state, and the request omits it
+        annotation = (
+            annotation | None
+        )  # "unset" is a value: the widget gets a None state, and the request omits it
         options["nullable"] = True
     default = param.get("default", inspect.Parameter.empty if param["required"] else None)
     if kind == "boolean" and default is None:

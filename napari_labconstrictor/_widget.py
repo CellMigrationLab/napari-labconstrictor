@@ -35,7 +35,10 @@ def _is_set(path):
 def _tool_names(schema):
     """[(name shown in the chooser, tool)]: the label, or `label (id)` when two tools share a label (never pick the wrong one)."""
     labels = [t["label"] for t in schema["tools"]]
-    return [(t["label"] if labels.count(t["label"]) == 1 else "%s (%s)" % (t["label"], t["id"]), t) for t in schema["tools"]]
+    return [
+        (t["label"] if labels.count(t["label"]) == 1 else "%s (%s)" % (t["label"], t["id"]), t)
+        for t in schema["tools"]
+    ]
 
 
 class _Signals(QObject):
@@ -51,7 +54,9 @@ class LabConstrictorWidget(QWidget):
         self.gui = None  # the magicgui form of the current tool
         self.file_sources = {}  # image parameter -> "or file" widget
         self.unset_toggles = {}  # nullable parameter -> "set" checkbox
-        self.advanced_toggle = None  # "Show advanced settings" checkbox (only when a tool has advanced parameters)
+        self.advanced_toggle = (
+            None  # "Show advanced settings" checkbox (only when a tool has advanced parameters)
+        )
         self._members = {}  # parameter -> its widgets (value widget, "or file" row, "set" checkbox)
         self.task = self.worker = self.last_task = None
         self.presenter = None
@@ -161,7 +166,9 @@ class LabConstrictorWidget(QWidget):
         self.description.setText(tool.get("description", ""))
         try:
             self.gui = self._make_form(tool)
-        except ValueError as error:  # a schema this host cannot show (e.g. an unknown parameter type): say so, no guessed form
+        except (
+            ValueError
+        ) as error:  # a schema this host cannot show (e.g. an unknown parameter type): say so, no guessed form
             log.error("napari: cannot build the form for %s: %s", tool.get("id"), error)
             self.status.setText("⚠ this tool cannot be shown: %s" % error)
             return
@@ -220,13 +227,23 @@ class LabConstrictorWidget(QWidget):
         out and left out of the request."""
         toggles = {}
         for param in tool["inputs"]:
-            if not param.get("nullable") or param["type"] not in ("integer", "float", "string", "choice", "boolean"):
+            if not param.get("nullable") or param["type"] not in (
+                "integer",
+                "float",
+                "string",
+                "choice",
+                "boolean",
+            ):
                 continue
             widget = self.gui[param["name"]]
             if param["type"] == "string" and getattr(widget, "value", None) == "None":
                 widget.value = ""
             toggle = mw.CheckBox(
-                value=False, text="set", label="  (optional)", tooltip="Leave unchecked to not set this value", gui_only=True
+                value=False,
+                text="set",
+                label="  (optional)",
+                tooltip="Leave unchecked to not set this value",
+                gui_only=True,
             )
             self.gui.insert(list(self.gui).index(widget) + 1, toggle)
             widget.enabled = False
@@ -240,7 +257,11 @@ class LabConstrictorWidget(QWidget):
         self._members = {
             p["name"]: [
                 w
-                for w in (self.gui[p["name"]], self.file_sources.get(p["name"]), self.unset_toggles.get(p["name"]))
+                for w in (
+                    self.gui[p["name"]],
+                    self.file_sources.get(p["name"]),
+                    self.unset_toggles.get(p["name"]),
+                )
                 if w is not None
             ]
             for p in inputs
@@ -278,7 +299,9 @@ class LabConstrictorWidget(QWidget):
     def _control_value(self, name):
         source = self.file_sources.get(name)
         if source is not None and _is_set(source.value):
-            return Path(source.value)  # an image chosen as a file is a value too (EnabledWhen("image") must see it)
+            return Path(
+                source.value
+            )  # an image chosen as a file is a value too (EnabledWhen("image") must see it)
         toggle = self.unset_toggles.get(name)
         if toggle is not None and not toggle.value:
             return None  # a nullable parameter that is not "set"
@@ -333,7 +356,11 @@ class LabConstrictorWidget(QWidget):
                 auto_value[0] = pixel.value = yx[1]
                 self.status.setText(
                     anisotropy_note(yx)
-                    or ("calibration assumed to be in µm (layer has no unit)" if assumed else self.status.text())
+                    or (
+                        "calibration assumed to be in µm (layer has no unit)"
+                        if assumed
+                        else self.status.text()
+                    )
                 )
 
         image.changed.connect(sync)
@@ -354,7 +381,9 @@ class LabConstrictorWidget(QWidget):
             shutil.rmtree(job_dir, ignore_errors=True)
             self.status.setText("⚠ %s" % error)
             return
-        except Exception as error:  # noqa: BLE001 - e.g. the disk is full while saving a layer: clean up, say so, log it
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - e.g. the disk is full while saving a layer: clean up, say so, log it
             log.error("napari: cannot prepare the inputs for %s", self.app_box.value, exc_info=True)
             shutil.rmtree(job_dir, ignore_errors=True)
             self._show_failure("could not prepare the inputs: %s" % error, error)
@@ -376,7 +405,9 @@ class LabConstrictorWidget(QWidget):
         try:
             worker = self._workers.acquire(self._run_app, reuse=self.reuse_box.isChecked())
             self.worker = worker
-            self._stderr_mark = getattr(worker.stderr, "total", None)  # None with an older labconstrictor-tools: then the whole tail is shown
+            self._stderr_mark = getattr(
+                worker.stderr, "total", None
+            )  # None with an older labconstrictor-tools: then the whole tail is shown
             task = worker.task(
                 self._run_tool["id"],
                 inputs,
@@ -384,7 +415,9 @@ class LabConstrictorWidget(QWidget):
             )
             self.task = task
             threading.Thread(target=lambda: (task.wait(), self._signals.done.emit(task)), daemon=True).start()
-        except Exception as error:  # noqa: BLE001 - e.g. the app's Python is gone, or the worker died at once: undo the start
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - e.g. the app's Python is gone, or the worker died at once: undo the start
             log.error("napari: cannot start %s for %s", self._run_tool["id"], self._run_app, exc_info=True)
             if worker is not None:
                 self._workers.release(self._run_app, worker, keep=False)
@@ -396,7 +429,10 @@ class LabConstrictorWidget(QWidget):
     def _show_failure(self, text, error):
         """A failure that never reached a task: status line plus the Details report."""
         self.status.setText("✖ %s" % text)
-        self.last_details = "%s\n\nlog file: %s" % (error, log.log_path())  # the file holds the full story; its tail may be of other runs
+        self.last_details = "%s\n\nlog file: %s" % (
+            error,
+            log.log_path(),
+        )  # the file holds the full story; its tail may be of other runs
         self.details_button.setEnabled(True)
 
     def _export_inputs(self, form_values, job_dir):
@@ -472,7 +508,9 @@ class LabConstrictorWidget(QWidget):
         self.status.setText(message or "")
 
     def _on_done(self, task):
-        if task is not self.task:  # a late signal of a run that is no longer the current one: never touch the current run's files
+        if (
+            task is not self.task
+        ):  # a late signal of a run that is no longer the current one: never touch the current run's files
             return
         self.last_task = task
         self.timings["run_wall_s"] = time.perf_counter() - self._started
@@ -503,7 +541,9 @@ class LabConstrictorWidget(QWidget):
             summaries = [self.presenter.show(result) for result in task.outputs["results"]]
         except Exception as error:  # noqa: BLE001 - some results may already be shown: do not claim success
             log.error("napari: could not show the results of %s", self._run_tool["id"], exc_info=True)
-            self._show_failure("the tool finished but its results could not be shown completely: %s" % error, error)
+            self._show_failure(
+                "the tool finished but its results could not be shown completely: %s" % error, error
+            )
             return
         finally:
             shutil.rmtree(
@@ -512,7 +552,10 @@ class LabConstrictorWidget(QWidget):
         failed = [s for s in summaries if s and s.startswith(COULD_NOT_DISPLAY)]
         text = "  ".join(s for s in summaries if s)
         if failed:  # the tool succeeded but part of its output is not in the viewer: not a plain success
-            self.status.setText("⚠ done in %.1fs, but some results could not be shown  %s" % (self.timings["run_wall_s"], text))
+            self.status.setText(
+                "⚠ done in %.1fs, but some results could not be shown  %s"
+                % (self.timings["run_wall_s"], text)
+            )
             self.last_details += "\n\nnot shown:\n" + "\n".join(failed)
         else:
             self.status.setText("✔ done in %.1fs  %s" % (self.timings["run_wall_s"], text))
@@ -520,7 +563,9 @@ class LabConstrictorWidget(QWidget):
     def _record_run(self, task):
         stderr = "".join(self.worker.stderr)
         total = getattr(self.worker.stderr, "total", None)
-        if total is not None and self._stderr_mark is not None:  # a kept worker has output of earlier runs: not part of this one
+        if (
+            total is not None and self._stderr_mark is not None
+        ):  # a kept worker has output of earlier runs: not part of this one
             fresh = total - self._stderr_mark
             stderr = stderr[-fresh:] if fresh > 0 else ""
         self.last_record = runs.record(

@@ -31,7 +31,9 @@ class WorkerCache:
         """Hand the worker back after a run. Only healthy workers are kept."""
         self._active.discard(worker)
         if keep and worker.alive:
-            displaced = self._workers.get(app)  # a second worker for the same app was kept meanwhile: do not leak it
+            displaced = self._workers.get(
+                app
+            )  # a second worker for the same app was kept meanwhile: do not leak it
             if displaced and displaced[0] is not worker:
                 displaced[0].close(timeout=2)
             self._workers[app] = [worker, time.monotonic()]

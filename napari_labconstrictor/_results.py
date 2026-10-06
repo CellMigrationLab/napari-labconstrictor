@@ -8,7 +8,9 @@ from labconstrictor_tools import log
 from qtpy.QtWidgets import QTableWidget, QTableWidgetItem
 
 COULD_NOT_DISPLAY = "(could not display "
-MAX_DISPLAY_BYTES = 4 * 1024**3  # a result image larger than this (uncompressed) is not loaded into the viewer
+MAX_DISPLAY_BYTES = (
+    4 * 1024**3
+)  # a result image larger than this (uncompressed) is not loaded into the viewer
 MAX_TABLE_ROWS = 100_000  # rows shown in a table dock; the file itself always has all of them
 
 
@@ -49,7 +51,11 @@ class ResultPresenter:
             return self._handlers[kind](result) or ""
         except Exception as error:  # noqa: BLE001 - a display problem must not hide the other results
             log.error("napari: could not display a %s result", kind, exc_info=True)
-            return "%s%s: %s)" % (COULD_NOT_DISPLAY, kind, repr(error) if isinstance(error, KeyError) else error)
+            return "%s%s: %s)" % (
+                COULD_NOT_DISPLAY,
+                kind,
+                repr(error) if isinstance(error, KeyError) else error,
+            )
 
     def _layer_name(self, result):
         return "%s:%s" % (self.app, result["name"])
@@ -57,7 +63,9 @@ class ResultPresenter:
     def _image(self, result):
         import tifffile
 
-        with tifffile.TiffFile(result["path"]) as tif:  # look before loading: a huge result must not freeze the viewer
+        with tifffile.TiffFile(
+            result["path"]
+        ) as tif:  # look before loading: a huge result must not freeze the viewer
             series = tif.series[0]
             size = int(np.prod(series.shape)) * np.dtype(series.dtype).itemsize
         if size > MAX_DISPLAY_BYTES:
@@ -101,7 +109,11 @@ class ResultPresenter:
             for j, cell in enumerate(row):
                 widget.setItem(i, j, QTableWidgetItem(cell))
         self.viewer.window.add_dock_widget(widget, name=result["name"], area="bottom")
-        shown = "%d rows" % (len(rows) - 1) if not hidden else "%d rows, first %d shown" % (len(rows) - 1 + hidden, len(rows) - 1)
+        shown = (
+            "%d rows" % (len(rows) - 1)
+            if not hidden
+            else "%d rows, first %d shown" % (len(rows) - 1 + hidden, len(rows) - 1)
+        )
         return "table '%s' (%s)" % (result["name"], shown)
 
     @staticmethod
