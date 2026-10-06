@@ -2,6 +2,7 @@
 Rescan during a run, duplicate tool labels, nullable yes/no parameters, an image given as a file driving enabled_when."""
 
 import glob
+import os
 import subprocess
 import sys
 import tempfile
@@ -200,7 +201,30 @@ w.file_sources["image"].value = tif
 pump(0.3)
 expect("gated_enabled_by_file_image", w.gui.x.enabled)
 
+# 8. closing the viewer stops the workers it keeps between runs (not only the end of the Python process)
+pick("synthetic", "Scalar echo")
+w.last_task = None
+w.gui()
+wait()
+pid = w.worker.proc.pid if w.worker is not None else None
+expect("worker_kept_between_runs", pid is not None and w._workers._workers, w._workers._workers)
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()[:1] != "Z"
+
+
+v.close()
+end = time.time() + 15
+while alive(pid) and time.time() < end:
+    qa.processEvents()
+    time.sleep(0.1)
+expect("closing_the_viewer_stops_the_workers", not alive(pid), pid)
+
 print(__import__("json").dumps(report, indent=2))
 print("FAILURES:", failures or "none")
-v.close()
 sys.exit(1 if failures else 0)

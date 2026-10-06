@@ -114,6 +114,9 @@ class LabConstrictorWidget(QWidget):
         self._reaper = QTimer(self)
         self._reaper.timeout.connect(self._workers.reap_idle)
         self._reaper.start(30_000)
+        # closing the Napari window deletes this widget without calling closeEvent: stop the workers then too (not only when the
+        # whole Python process ends); bound to the cache object, which outlives the widget
+        self.destroyed.connect(self._workers.close_all)
         self.app_box.changed.connect(self._on_app_changed)
         self.tool_box.changed.connect(self._on_tool_changed)
 

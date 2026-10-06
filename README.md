@@ -10,8 +10,10 @@ dependencies coexist.
 ## Install
 In the Napari environment (Python >= 3.10):
 
-    pip install git+https://github.com/CellMigrationLab/LabConstrictor-Tools      # the runtime (not on PyPI yet)
-    pip install git+https://github.com/CellMigrationLab/napari-labconstrictor
+    pip install https://github.com/CellMigrationLab/LabConstrictor-Tools/archive/refs/heads/main.zip      # the runtime (not on PyPI yet)
+    pip install https://github.com/CellMigrationLab/napari-labconstrictor/archive/refs/heads/main.zip
+
+(Source archives: no `git` program is needed. With git you can use `git+https://github.com/CellMigrationLab/<repository>` instead.)
 
 Then **Plugins > LabConstrictor tools**. The widget lists the apps registered on this machine (the LabConstrictor installer
 registers each app; for a manual registration see the Tools repository: `labconstrictor-tools register ...`).
