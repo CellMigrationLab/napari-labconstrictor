@@ -16,7 +16,7 @@ tools = Path(tempfile.mkdtemp(prefix="lcinteract_"))
 workdir = Path(tempfile.mkdtemp(prefix="lcinteract_data_"))
 (tools / "interact_lc_tools.py").write_text(
     "from pathlib import Path\n"
-    "from typing import Annotated\n"
+    "from typing import Annotated, Optional\n"
     "import numpy as np\n"
     "from labconstrictor_tools import ChoicesFrom, ClearAfterRun, Collapsed, Folder, Group, ImageOut, Name, Replace, Scalars, TableOut, tool\n"
     "@tool('List options')\n"
@@ -25,9 +25,10 @@ workdir = Path(tempfile.mkdtemp(prefix="lcinteract_data_"))
     "    return {'choices': f.read_text().split() if f.exists() else []}\n"
     "@tool('Answer')\n"
     "def answer(folder: Folder,\n"
-    "           guess: Annotated[str, ChoicesFrom('options', depends=['folder']), ClearAfterRun()] = '',\n"
+    "           guess: Annotated[Optional[str], ChoicesFrom('options', depends=['folder']), ClearAfterRun()] = None,\n"
     "           extra: Annotated[int, Group('More options'), Collapsed()] = 1,\n"
     "           ) -> tuple[Annotated[ImageOut, Name('view'), Replace()], Annotated[TableOut, Name('log'), Replace()], Scalars]:\n"
+    "    guess = guess or ''\n"
     "    n = len(guess) + 1\n"
     "    return np.full((8 * n, 8 * n), n, dtype=np.uint8), {'guess': [guess]}, {'got': guess}\n"
 )
@@ -92,6 +93,7 @@ expect("dropdown_options", list(box.choices) == ["", "Control", "Treated"], list
 box.value = "Treated"
 pump(0.2)
 expect("dropdown_choice_is_the_value_sent", w.gui.guess.value == "Treated")
+expect("picking_an_option_ticks_set", w.unset_toggles["guess"].value is True)
 
 # 2. Collapsed group starts folded, opens on click, folds again
 heading = w._group_heading["More options"]
@@ -108,7 +110,7 @@ run()
 expect("first_run_ok", w.last_task.status == "COMPLETE" and "got=Treated" in w.status.text(), w.status.text())
 layers = [l.name for l in v.layers]
 expect("one_layer_after_first_run", layers == ["interact:view"], layers)
-expect("guess_cleared_after_the_run", w.gui.guess.value == "" and box.value == "", (w.gui.guess.value, box.value))
+expect("guess_cleared_after_the_run", w.gui.guess.value == "" and box.value == "" and w.unset_toggles["guess"].value is False, (w.gui.guess.value, box.value, w.unset_toggles["guess"].value))
 box.value = "Control"
 pump(0.2)
 run()
@@ -126,6 +128,7 @@ until(lambda: shown(w.gui.guess))
 expect("falls_back_to_text_when_no_options", shown(w.gui.guess) and not shown(box))
 
 # 5. a failed run does not clear the field
+w.unset_toggles["guess"].value = True
 w.gui.guess.value = "keep me"
 w.gui.folder.value = Path(tempfile.gettempdir()) / "does_not_exist_lc"
 pump(0.3)

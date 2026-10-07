@@ -351,10 +351,17 @@ class LabConstrictorWidget(QWidget):
             box = mw.ComboBox(choices=[""], label=p["label"], tooltip=p.get("description", ""), gui_only=True)
             box.visible = False
             self.gui.insert(list(self.gui).index(field) + 1, box)
-            box.changed.connect(lambda value, f=field: setattr(f, "value", value or ""))
+            box.changed.connect(lambda value, f=field, n=p["name"]: self._choice_picked(n, f, value))
             self._choice_boxes[p["name"]] = box
             for name in src["depends"]:
                 self.gui[name].changed.connect(lambda *_: self._schedule_choices(400))
+
+    def _choice_picked(self, name, field, value):
+        """Picking an option is the value (the text field behind it) and, for an optional parameter, also 'set'; the blank entry unsets it."""
+        field.value = value or ""
+        toggle = self.unset_toggles.get(name)
+        if toggle is not None:
+            toggle.value = bool(value)
 
     def _schedule_choices(self, delay_ms):
         if self._choice_boxes:
