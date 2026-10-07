@@ -18,11 +18,15 @@ workdir = Path(tempfile.mkdtemp(prefix="lcinteract_data_"))
     "from pathlib import Path\n"
     "from typing import Annotated, Optional\n"
     "import numpy as np\n"
-    "from labconstrictor_tools import ChoicesFrom, ClearAfterRun, Collapsed, Folder, Group, ImageOut, Name, Replace, Scalars, TableOut, tool\n"
+    "from labconstrictor_tools import Affine, ApplyTo, Image, ChoicesFrom, ClearAfterRun, Collapsed, Folder, Group, ImageOut, Name, Replace, Scalars, TableOut, tool\n"
     "@tool('List options')\n"
     "def options(folder: Folder) -> Scalars:\n"
     "    f = Path(folder) / 'options.txt'\n"
     "    return {'choices': f.read_text().split() if f.exists() else []}\n"
+    "@tool('Warp')\n"
+    "def warp(image: Image, shift: float = 1.0) -> Annotated[Affine, ApplyTo('image'), Name('alignment'), Replace()]:\n"
+    "    m = np.eye(3); m[0, 2] = shift\n"
+    "    return m\n"
     "@tool('Answer')\n"
     "def answer(folder: Folder,\n"
     "           guess: Annotated[Optional[str], ChoicesFrom('options', depends=['folder']), ClearAfterRun()] = None,\n"
@@ -134,6 +138,20 @@ w.gui.folder.value = Path(tempfile.gettempdir()) / "does_not_exist_lc"
 pump(0.3)
 run()
 expect("failed_run_keeps_the_guess", w.last_task.status != "COMPLETE" and w.gui.guess.value == "keep me", (w.last_task.status, w.gui.guess.value))
+
+# 6. Replace on an affine output: two runs leave one overlay layer
+import numpy as np
+
+v.layers.clear()
+v.add_image(np.random.default_rng(0).random((32, 32)), name="src")
+w.tool_box.value = "Warp"
+pump(0.5)
+for shift in (1.0, 4.0):
+    w.gui.shift.value = shift
+    run()
+overlays = [l.name for l in v.layers if l.name == "interact:alignment"]
+expect("affine_replace_keeps_one_overlay", len(overlays) == 1 and w.last_task.status == "COMPLETE", [l.name for l in v.layers])
+expect("affine_overlay_has_the_new_matrix", abs(v.layers["interact:alignment"].affine.affine_matrix[0, 2] - 4.0) < 1e-6, v.layers["interact:alignment"].affine.affine_matrix)
 
 v.screenshot(str(EVIDENCE / "widget_interactions.png"), canvas_only=False)
 print(json.dumps(report, indent=2))
