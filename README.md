@@ -42,6 +42,7 @@ registers each app; for a manual registration see the Tools repository: `labcons
     xvfb-run -a python test_run_state.py
     xvfb-run -a python test_presentation.py        # groups, advanced toggle, enabled_when
     xvfb-run -a python test_interactions.py        # ChoicesFrom dropdown, ClearAfterRun, Collapsed accordion, Replace
+    xvfb-run -a python test_widgets.py             # Widget("slider") and Widget("radio")
     xvfb-run -a python test_scroll.py              # a form taller than the dock scrolls; Run/status stay in view
     xvfb-run -a python test_messages_points.py     # message and points outputs with the example app of labconstrictor-tools
     xvfb-run -a python test_channels.py            # PickChannel: channel chooser for RGB layers and multi-channel TIFF files
