@@ -38,12 +38,15 @@ class ResultPresenter:
         self.replace = set(replace)  # output names whose previous result this run replaces (Replace())
         self.docks = docks if docks is not None else {}  # (app, table name) -> dock widget kept between runs
         self.tables = {}
+        self.messages = []  # texts of message results, shown by the widget below the status line
         self._handlers = {
             "image": self._image,
             "labels": self._image,
             "affine": self._affine,
             "table": self._table,
             "values": self._values,
+            "message": self._message,
+            "points": self._points,
             "file": self._file,
         }
 
@@ -135,6 +138,23 @@ class ResultPresenter:
             else "%d rows, first %d shown" % (len(rows) - 1 + hidden, len(rows) - 1)
         )
         return "table '%s' (%s)" % (result["name"], shown)
+
+    def _message(self, result):
+        self.messages.append(result["text"])
+
+    def _points(self, result):
+        import pandas as pd
+
+        frame = pd.read_csv(result["path"])
+        data = frame[["y", "x"]].to_numpy(dtype=float)
+        properties = {c: frame[c].to_numpy() for c in frame.columns[2:]}
+        source = self.inputs.get(result.get("apply_to")) or next(iter(self.inputs.values()), None)
+        scale = tuple(source.scale[-2:]) if source is not None and hasattr(source, "scale") else (1.0, 1.0)
+        name = self._layer_name(result)
+        if result["name"] in self.replace and name in self.viewer.layers:
+            self.viewer.layers.remove(self.viewer.layers[name])  # Replace(): the new points take the place of the previous ones
+        self.viewer.add_points(data, name=name, properties=properties or None, scale=scale, size=8, face_color="yellow", border_color="black")
+        return "points '%s' (%d)" % (result["name"], len(frame))
 
     @staticmethod
     def _values(result):
