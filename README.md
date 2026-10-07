@@ -41,6 +41,7 @@ registers each app; for a manual registration see the Tools repository: `labcons
     xvfb-run -a python test_file_sources.py
     xvfb-run -a python test_run_state.py
     xvfb-run -a python test_presentation.py        # groups, advanced toggle, enabled_when
+    xvfb-run -a python test_interactions.py        # ChoicesFrom dropdown, ClearAfterRun, Collapsed accordion, Replace
     xvfb-run -a python test_widget_hardening.py    # failed starts, unshowable results, full disk, duplicate labels, optional yes/no
 
 The tests register the example app shipped with `labconstrictor-tools` (`labconstrictor_tools.examples.synthetic`) in a private
