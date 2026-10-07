@@ -451,9 +451,13 @@ class LabConstrictorWidget(QWidget):
             box.visible = False
             field.visible = True
             return
-        current = field.value
-        box.choices = [""] + options
-        box.value = current if current in options else ""
+        current = field.value or ""
+        param = next((p for p in self.tool["inputs"] if p["name"] == name), {})
+        # A blank entry means "no answer" (unset for an optional parameter, or when the field is empty). A value the field already
+        # holds (its default, or what was typed) stays selectable even when the source tool does not list it: never silently dropped.
+        entries = ([""] if param.get("nullable") or not current else []) + ([current] if current and current not in options else []) + options
+        box.choices = entries
+        box.value = current if current in entries else entries[0]
         field.visible = False
         box.visible = True
 
