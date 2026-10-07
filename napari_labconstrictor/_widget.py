@@ -15,7 +15,7 @@ from labconstrictor_tools.protocol import JOB_DIR_KEY
 from magicgui import magicgui
 from magicgui import widgets as mw
 from qtpy.QtCore import QObject, Qt, QTimer, Signal
-from qtpy.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from ._results import COULD_NOT_DISPLAY, FileInput, ResultPresenter
 from ._schema import presentation_order, rule_satisfied, signature_from_schema
@@ -114,11 +114,18 @@ class LabConstrictorWidget(QWidget):
         self.details_button = QPushButton("Details…")
         self.details_button.setEnabled(False)
         self.details_button.setToolTip("Error details, worker output and the run record of the last run")
+        self.copy_button = QPushButton("Copy as command")
+        self.copy_button.setToolTip("Copy what repeats this run outside Napari: a terminal line or a Python snippet")
+        copy_menu = QMenu(self.copy_button)
+        copy_menu.addAction("Terminal command").triggered.connect(lambda *_: self.copy_as_command("terminal"))
+        copy_menu.addAction("Python snippet").triggered.connect(lambda *_: self.copy_as_command("python"))
+        self.copy_button.setMenu(copy_menu)
         buttons = QHBoxLayout()
         buttons.addWidget(self.cancel_button)
         buttons.addWidget(self.rescan_button)
         buttons.addWidget(self.restart_button)
         buttons.addWidget(self.details_button)
+        buttons.addWidget(self.copy_button)
         layout = QVBoxLayout(self)
         for widget in (self.app_box.native, self.tool_box.native, self.description):
             layout.addWidget(widget)
@@ -713,6 +720,48 @@ class LabConstrictorWidget(QWidget):
             else:
                 inputs[param["name"]] = value
         return inputs
+
+    def current_values(self):
+        """The form as the values a command line needs: unset optional parameters are omitted; an image or labels input is the
+        file it came from (a file chosen in the form, else the layer's source file) or None, which becomes a placeholder."""
+        form = self.gui
+        values = {}
+        for param in self.tool["inputs"]:
+            name = param["name"]
+            toggle = self.unset_toggles.get(name)
+            if toggle is not None and not toggle.value:
+                continue
+            source = self.file_sources.get(name)
+            if source is not None and _is_set(source.value):
+                values[name] = str(source.value)
+                continue
+            value = form[name].value
+            if param["type"] in ("image", "labels"):
+                path = getattr(getattr(value, "source", None), "path", None)
+                values[name] = str(path) if path else None
+            elif value is None or (isinstance(value, Path) and str(value) in ("", ".")):
+                continue
+            elif param["type"] in ("table", "file", "folder"):
+                values[name] = str(value)
+            else:
+                values[name] = value
+        return values
+
+    def copy_as_command(self, kind="terminal"):
+        """Put the terminal line or the Python snippet that repeats this form on the clipboard."""
+        from labconstrictor_tools import command
+
+        if self.gui is None or self.tool is None:
+            return None
+        app = self.app_box.value
+        values = self.current_values()
+        if kind == "python":
+            text = command.python_snippet(app, self.tool, values)
+        else:
+            text = command.command_line(app, self.tool, values, python=self.apps[app].get("python", "python"))
+        QApplication.clipboard().setText(text)
+        self.status.setText("✔ copied the %s to the clipboard" % ("Python snippet" if kind == "python" else "terminal command"))
+        return text
 
     def _picked_channel(self, name):
         """The index of the channel the person chose for image parameter `name`, or None when there is nothing to choose."""
