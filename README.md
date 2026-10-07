@@ -45,6 +45,7 @@ registers each app; for a manual registration see the Tools repository: `labcons
     xvfb-run -a python test_widgets.py             # Widget("slider") and Widget("radio")
     xvfb-run -a python test_copy_command.py        # Copy as command: terminal line and Python snippet, run for real
     xvfb-run -a python test_shapes.py              # ShapesOut: GeoJSON outlines as a shapes layer
+    xvfb-run -a python test_region.py              # RegionOf: use the selection as the region (labels 1..N), refusals
     xvfb-run -a python test_scroll.py              # a form taller than the dock scrolls; Run/status stay in view
     xvfb-run -a python test_messages_points.py     # message and points outputs with the example app of labconstrictor-tools
     xvfb-run -a python test_channels.py            # PickChannel: channel chooser for RGB layers and multi-channel TIFF files
