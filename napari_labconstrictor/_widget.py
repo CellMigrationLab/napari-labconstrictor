@@ -14,8 +14,8 @@ from labconstrictor_tools import log, registry, runs
 from labconstrictor_tools.protocol import JOB_DIR_KEY
 from magicgui import magicgui
 from magicgui import widgets as mw
-from qtpy.QtCore import QObject, QTimer, Signal
-from qtpy.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
+from qtpy.QtCore import QObject, Qt, QTimer, Signal
+from qtpy.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from ._results import COULD_NOT_DISPLAY, FileInput, ResultPresenter
 from ._schema import presentation_order, rule_satisfied, signature_from_schema
@@ -115,12 +115,21 @@ class LabConstrictorWidget(QWidget):
         layout = QVBoxLayout(self)
         for widget in (self.app_box.native, self.tool_box.native, self.description):
             layout.addWidget(widget)
-        layout.addLayout(self.form_holder)
+        # The form can be taller than the dock (advanced settings of a big tool): it scrolls, while the progress bar, status and
+        # buttons below stay in view.
+        form_container = QWidget()
+        form_container.setLayout(self.form_holder)
+        self.form_holder.setContentsMargins(0, 0, 0, 0)
+        self.form_scroll = QScrollArea()
+        self.form_scroll.setWidgetResizable(True)
+        self.form_scroll.setFrameShape(QFrame.NoFrame)
+        self.form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.form_scroll.setWidget(form_container)
+        layout.addWidget(self.form_scroll, 1)
         layout.addWidget(self.bar)
         layout.addWidget(self.status)
         layout.addWidget(self.reuse_box)
         layout.addLayout(buttons)
-        layout.addStretch(1)
         self.cancel_button.clicked.connect(self.cancel)
         self.details_button.clicked.connect(self._show_details)
         self.rescan_button.clicked.connect(self.rescan)
