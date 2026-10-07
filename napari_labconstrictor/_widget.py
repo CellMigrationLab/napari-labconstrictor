@@ -55,6 +55,7 @@ class LabConstrictorWidget(QWidget):
         self.gui = None  # the magicgui form of the current tool
         self.file_sources = {}  # image parameter -> "or file" widget
         self.unset_toggles = {}  # nullable parameter -> "set" checkbox
+        self.channel_boxes = {}  # PickChannel image parameter -> its channel chooser
         self.advanced_toggle = (
             None  # "Show advanced settings" checkbox (only when a tool has advanced parameters)
         )
@@ -213,6 +214,7 @@ class LabConstrictorWidget(QWidget):
             self.status.setText("⚠ this tool cannot be shown: %s" % error)
             return
         self.file_sources = self._add_file_sources(tool)
+        self.channel_boxes = self._add_channel_choosers(tool)
         self.unset_toggles = self._add_unset_toggles(tool)
         self._apply_presentation(tool)
         self._add_choice_boxes(tool)
@@ -231,6 +233,7 @@ class LabConstrictorWidget(QWidget):
             self.gui = None
             self.file_sources = {}
             self.unset_toggles = {}
+            self.channel_boxes = {}
             self.advanced_toggle, self._members = None, {}
             self._choice_boxes, self._group_members = {}, {}
             self._choice_seq = {}  # an answer still on its way belongs to the form that is gone
@@ -265,6 +268,53 @@ class LabConstrictorWidget(QWidget):
             edit.changed.connect(lambda *_: self._refresh_enabled())
             sources[param["name"]] = edit
         return sources
+
+    def _add_channel_choosers(self, tool):
+        """PickChannel: a Channel chooser under the image. It lists the channels it can see (the colours of an RGB layer, the C axis of a
+        TIFF given as a file) and is hidden when there is only one; the tool then receives just the chosen channel."""
+        boxes = {}
+        for param in tool["inputs"]:
+            if not param.get("pick_channel") or param["name"] not in self.file_sources:
+                continue
+            name = param["name"]
+            box = mw.ComboBox(choices=[""], label="  channel", tooltip="The tool receives only this channel", gui_only=True)
+            box.visible = False
+            edit = self.file_sources[name]
+            self.gui.insert(list(self.gui).index(edit) + 1, box)
+            boxes[name] = box
+            self.gui[name].changed.connect(lambda *_, n=name: self._refresh_channels(n))
+            edit.changed.connect(lambda *_, n=name: self._refresh_channels(n))
+            self.channel_boxes[name] = box
+            self._refresh_channels(name)
+        return boxes
+
+    def _channel_names(self, name):
+        """The channels of what is chosen for image parameter `name`: names, or [] when the image is a single channel."""
+        source = self.file_sources.get(name)
+        if source is not None and _is_set(source.value):
+            try:
+                import tifffile
+
+                with tifffile.TiffFile(str(source.value)) as tif:
+                    series = tif.series[0]
+                    if "C" in series.axes:
+                        return ["Channel %d" % (i + 1) for i in range(series.shape[series.axes.index("C")])]
+            except Exception:  # noqa: BLE001 - an unreadable file is reported when the run starts
+                pass
+            return []
+        layer = self.gui[name].value
+        if layer is not None and getattr(layer, "rgb", False):
+            return ["Red", "Green", "Blue"]
+        return []
+
+    def _refresh_channels(self, name):
+        box = self.channel_boxes.get(name)
+        if box is None:
+            return
+        names = self._channel_names(name)
+        box.choices = names or [""]
+        box.value = names[0] if names else ""
+        box.visible = len(names) > 1
 
     def _add_unset_toggles(self, tool):
         """A number, text or yes/no that is optional and has no default may be left UNSET (the tool then receives None). These
@@ -305,6 +355,7 @@ class LabConstrictorWidget(QWidget):
                 for w in (
                     self.gui[p["name"]],
                     self.file_sources.get(p["name"]),
+                    self.channel_boxes.get(p["name"]),
                     self.unset_toggles.get(p["name"]),
                 )
                 if w is not None
@@ -628,6 +679,9 @@ class LabConstrictorWidget(QWidget):
                 path = Path(source.value)
                 if not path.is_file():
                     raise ValueError("'%s': file not found: %s" % (param["label"], path))
+                picked = self._picked_channel(param["name"])
+                if picked is not None:  # PickChannel: the file's chosen channel is written for the worker
+                    path = self._channel_file(path, picked, param["label"], job_dir / (param["name"] + ".tif"))
                 inputs[param["name"]] = str(path)
                 continue
             toggle = self.unset_toggles.get(param["name"])
@@ -648,13 +702,39 @@ class LabConstrictorWidget(QWidget):
                         "layer '%s' is %.1f GB; exporting more than %.0f GB is not supported"
                         % (value.name, size / 1024**3, MAX_EXPORT_BYTES / 1024**3)
                     )
-                imwrite(path, np.asarray(data))
+                data = np.asarray(data)
+                picked = self._picked_channel(param["name"])
+                if picked is not None and getattr(value, "rgb", False):  # PickChannel on an RGB layer: one colour
+                    data = data[..., picked]
+                imwrite(path, data)
                 inputs[param["name"]] = str(path)
             elif param["type"] in ("table", "file", "folder"):
                 inputs[param["name"]] = str(value)
             else:
                 inputs[param["name"]] = value
         return inputs
+
+    def _picked_channel(self, name):
+        """The index of the channel the person chose for image parameter `name`, or None when there is nothing to choose."""
+        box = self.channel_boxes.get(name)
+        if box is None or box.native.isHidden() or box.value in ("", None):
+            return None
+        return list(box.choices).index(box.value)
+
+    @staticmethod
+    def _channel_file(path, index, label, target):
+        """One channel of a multi-channel TIFF, written as its own TIFF."""
+        import tifffile
+
+        with tifffile.TiffFile(str(path)) as tif:
+            series = tif.series[0]
+            data, axes = series.asarray(), series.axes
+        if "C" not in axes:
+            return path
+        if index >= data.shape[axes.index("C")]:
+            raise ValueError("'%s': channel %d was asked for, but the file has %d" % (label, index + 1, data.shape[axes.index("C")]))
+        tifffile.imwrite(target, np.take(data, index, axis=axes.index("C")))
+        return target
 
     def _set_running(self, running):
         self.bar.setVisible(running)
