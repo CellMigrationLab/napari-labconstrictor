@@ -95,9 +95,12 @@ class ResultPresenter:
         # so keep the source in pixel units (scale=1) and left-multiply by the target's calibration.
         if target is not None:
             matrix = np.diag([target.scale[-2], target.scale[-1], 1.0]) @ matrix
+        name = self._layer_name(result)
+        if result["name"] in self.replace and name in self.viewer.layers:
+            self.viewer.layers.remove(self.viewer.layers[name])  # Replace(): the new alignment takes the place of the previous overlay
         self.viewer.add_image(
             source.data,
-            name=self._layer_name(result),
+            name=name,
             affine=matrix,
             scale=(1, 1),
             colormap="magenta",
