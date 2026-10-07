@@ -14,6 +14,9 @@ MAX_DISPLAY_BYTES = (
 MAX_TABLE_ROWS = 100_000  # rows shown in a table dock; the file itself always has all of them
 
 
+MAX_SHAPES = 50_000  # outlines shown; the rest are counted in a message
+
+
 class FileInput:
     """Stands in for a layer when an image parameter was given as a file (needed to place affine results)."""
 
@@ -47,6 +50,7 @@ class ResultPresenter:
             "values": self._values,
             "message": self._message,
             "points": self._points,
+            "shapes": self._shapes,
             "file": self._file,
         }
 
@@ -155,6 +159,43 @@ class ResultPresenter:
             self.viewer.layers.remove(self.viewer.layers[name])  # Replace(): the new points take the place of the previous ones
         self.viewer.add_points(data, name=name, properties=properties or None, scale=scale, size=8, face_color="yellow", border_color="black")
         return "points '%s' (%d)" % (result["name"], len(frame))
+
+    def _shapes(self, result):
+        """GeoJSON outlines -> one polygon per part (Napari polygons have no holes: the outer boundary is drawn, and a note says so)."""
+        import json
+
+        collection = json.loads(Path(result["path"]).read_text(encoding="utf-8"))
+        polygons, rows, with_holes = [], [], 0
+        for feature in collection.get("features", []):
+            geometry = feature["geometry"]
+            parts = [geometry["coordinates"]] if geometry["type"] == "Polygon" else geometry["coordinates"]
+            for part in parts:
+                ring = np.asarray(part[0], dtype=float)[:-1]  # closed ring: drop the repeated last vertex
+                polygons.append(ring[:, ::-1])  # GeoJSON [x, y] -> Napari (y, x)
+                rows.append(feature.get("properties") or {})
+                with_holes += len(part) > 1
+        total = len(polygons)
+        if total > MAX_SHAPES:
+            polygons, rows = polygons[:MAX_SHAPES], rows[:MAX_SHAPES]
+        keys = sorted({k for row in rows for k in row})
+        properties = {k: np.array([row.get(k, "") for row in rows]) for k in keys}
+        source = self.inputs.get(result.get("apply_to")) or next(iter(self.inputs.values()), None)
+        scale = tuple(source.scale[-2:]) if source is not None and hasattr(source, "scale") else (1.0, 1.0)
+        name = self._layer_name(result)
+        if result["name"] in self.replace and name in self.viewer.layers:
+            self.viewer.layers.remove(self.viewer.layers[name])  # Replace(): the new outlines take the place of the previous ones
+        if polygons:
+            self.viewer.add_shapes(
+                polygons, shape_type="polygon", name=name, properties=properties or None, scale=scale,
+                edge_color="yellow", face_color="transparent", edge_width=1,
+            )  # fmt: skip
+        else:
+            self.viewer.add_shapes(name=name, scale=scale)
+        if total > MAX_SHAPES:
+            self.messages.append("**%s**: showing the first %d of %d outlines." % (result["name"], MAX_SHAPES, total))
+        if with_holes:
+            self.messages.append("**%s**: %d outline(s) have holes; the layer draws only the outer boundary." % (result["name"], with_holes))
+        return "outlines '%s' (%d)" % (result["name"], len(polygons))
 
     @staticmethod
     def _values(result):
