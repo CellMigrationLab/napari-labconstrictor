@@ -55,6 +55,7 @@ class LabConstrictorWidget(QWidget):
         self.gui = None  # the magicgui form of the current tool
         self.file_sources = {}  # image parameter -> "or file" widget
         self.unset_toggles = {}  # nullable parameter -> "set" checkbox
+        self.region_toggles = {}  # RegionOf parameter -> "use the selection" checkbox
         self.channel_boxes = {}  # PickChannel image parameter -> its channel chooser
         self.advanced_toggle = (
             None  # "Show advanced settings" checkbox (only when a tool has advanced parameters)
@@ -223,6 +224,7 @@ class LabConstrictorWidget(QWidget):
         self.file_sources = self._add_file_sources(tool)
         self.channel_boxes = self._add_channel_choosers(tool)
         self.unset_toggles = self._add_unset_toggles(tool)
+        self.region_toggles = self._add_region_toggles(tool)
         self._apply_presentation(tool)
         self._add_choice_boxes(tool)
         self.gui.native.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
@@ -240,6 +242,7 @@ class LabConstrictorWidget(QWidget):
             self.gui = None
             self.file_sources = {}
             self.unset_toggles = {}
+            self.region_toggles = {}
             self.channel_boxes = {}
             self.advanced_toggle, self._members = None, {}
             self._choice_boxes, self._group_members = {}, {}
@@ -352,6 +355,61 @@ class LabConstrictorWidget(QWidget):
             toggle.changed.connect(lambda *_: self._refresh_enabled())
             toggles[param["name"]] = toggle
         return toggles
+
+    def _add_region_toggles(self, tool):
+        """RegionOf: an optional Labels input that the host fills from the selection. A 'use the selection' box (off by default)
+        decides whether the selected Shapes layer is sent as the region; when on it takes the place of the layer chooser."""
+        toggles = {}
+        for param in tool["inputs"]:
+            if not param.get("region_of"):
+                continue
+            toggle = mw.CheckBox(
+                value=False,
+                text="use the selection",
+                label="  (region)",
+                tooltip="Send the shapes of the selected Shapes layer as the region (several shapes are labels 1, 2, 3...)",
+                gui_only=True,
+            )
+            self.gui.insert(list(self.gui).index(self.gui[param["name"]]) + 1, toggle)
+            toggle.changed.connect(lambda *_: self._refresh_enabled())
+            toggles[param["name"]] = toggle
+        return toggles
+
+    def _selection_mask(self, param, form_values, job_dir):
+        """The shapes of the selected Shapes layer as a label image the size of the image named by `param["region_of"]`
+        (labels 1..N). Anything that makes that impossible is said to the person, never guessed around."""
+        from napari.layers import Shapes
+        from tifffile import imwrite
+
+        label = param["label"]
+        layer = next((l for l in self.viewer.layers.selection if isinstance(l, Shapes)), None)
+        if layer is None:
+            raise ValueError("'%s': select a Shapes layer in the layer list, or untick 'use the selection'" % label)
+        if len(layer.data) == 0:
+            raise ValueError("'%s': the selected Shapes layer '%s' has no shapes" % (label, layer.name))
+        source = self.file_sources.get(param["region_of"])
+        image = form_values.get(param["region_of"])
+        if source is not None and _is_set(source.value):
+            import tifffile
+
+            with tifffile.TiffFile(str(source.value)) as tif:
+                shape, scale = tif.series[0].shape[-2:], None
+        elif image is not None:
+            shape = (image.data[0] if getattr(image, "multiscale", False) else image.data).shape[-2:]
+            scale = tuple(image.scale[-2:])
+        else:
+            raise ValueError("'%s': choose the image it belongs to first" % label)
+        if scale is not None and not np.allclose(layer.scale[-2:], scale):
+            raise ValueError(
+                "'%s': the Shapes layer '%s' has the scale %s but the image has %s; give them the same scale"
+                % (label, layer.name, tuple(layer.scale[-2:]), scale)
+            )
+        mask = np.asarray(layer.to_labels(labels_shape=tuple(shape)), dtype=np.int32)
+        if not mask.any():
+            raise ValueError("'%s': the shapes of '%s' lie outside the image" % (label, layer.name))
+        path = job_dir / (param["name"] + ".tif")
+        imwrite(path, mask)
+        return str(path)
 
     # ---- presentation hints: group headings, advanced settings, enabled_when ----
     def _apply_presentation(self, tool):
@@ -553,9 +611,12 @@ class LabConstrictorWidget(QWidget):
             name = p["name"]
             rule = p.get("enabled_when")
             applies = rule is None or rule_satisfied(rule, self._control_value(rule["param"]))
-            if name in self.file_sources:  # image/labels: the layer chooser yields to a chosen file
-                self.gui[name].enabled = applies and not _is_set(self.file_sources[name].value)
-                self.file_sources[name].enabled = applies
+            region_on = name in self.region_toggles and bool(self.region_toggles[name].value)
+            if name in self.region_toggles:
+                self.region_toggles[name].enabled = applies
+            if name in self.file_sources:  # image/labels: the layer chooser yields to a chosen file (or to the selection)
+                self.gui[name].enabled = applies and not region_on and not _is_set(self.file_sources[name].value)
+                self.file_sources[name].enabled = applies and not region_on
             elif name in self.unset_toggles:
                 self.unset_toggles[name].enabled = applies
                 self.gui[name].enabled = applies and bool(self.unset_toggles[name].value)
@@ -682,6 +743,10 @@ class LabConstrictorWidget(QWidget):
         for param in self.tool["inputs"]:
             value = form_values.get(param["name"])
             source = self.file_sources.get(param["name"])
+            region = self.region_toggles.get(param["name"])
+            if region is not None and region.value:  # RegionOf: the selection is the value
+                inputs[param["name"]] = self._selection_mask(param, form_values, job_dir)
+                continue
             if source is not None and _is_set(source.value):  # file chosen: the worker reads it directly
                 path = Path(source.value)
                 if not path.is_file():
@@ -731,6 +796,10 @@ class LabConstrictorWidget(QWidget):
             toggle = self.unset_toggles.get(name)
             if toggle is not None and not toggle.value:
                 continue
+            region = self.region_toggles.get(name)
+            if region is not None and region.value:  # a selection cannot be written on a command line: the note says so
+                values[name] = "region.tif"
+                continue
             source = self.file_sources.get(name)
             if source is not None and _is_set(source.value):
                 values[name] = str(source.value)
@@ -759,6 +828,9 @@ class LabConstrictorWidget(QWidget):
             text = command.python_snippet(app, self.tool, values)
         else:
             text = command.command_line(app, self.tool, values, python=self.apps[app].get("python", "python"))
+        selected = [n for n, t in self.region_toggles.items() if t.value]
+        if selected:
+            text = "# %s: the selection cannot be copied; save it as a label image and put its path here\n%s" % (", ".join(selected), text)
         QApplication.clipboard().setText(text)
         self.status.setText("✔ copied the %s to the clipboard" % ("Python snippet" if kind == "python" else "terminal command"))
         return text
