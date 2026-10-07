@@ -33,8 +33,10 @@ class FileInput:
 class ResultPresenter:
     """`show(result)` adds layers/docks to the viewer and returns a short text for the status line."""
 
-    def __init__(self, viewer, app_name, inputs):
+    def __init__(self, viewer, app_name, inputs, replace=(), docks=None):
         self.viewer, self.app, self.inputs = viewer, app_name, inputs  # inputs: the layers chosen in the form
+        self.replace = set(replace)  # output names whose previous result this run replaces (Replace())
+        self.docks = docks if docks is not None else {}  # (app, table name) -> dock widget kept between runs
         self.tables = {}
         self._handlers = {
             "image": self._image,
@@ -75,7 +77,15 @@ class ResultPresenter:
             )
         data = tifffile.imread(result["path"])
         add = self.viewer.add_labels if result["type"] == "labels" else self.viewer.add_image
-        add(data, name=self._layer_name(result))
+        name = self._layer_name(result)
+        if result["name"] in self.replace and name in self.viewer.layers:
+            old = self.viewer.layers[name]
+            kind = type(old).__name__
+            if kind == ("Labels" if result["type"] == "labels" else "Image") and old.data.ndim == data.ndim:
+                old.data = data  # same layer: the view, contrast and position the user chose stay
+                return
+            self.viewer.layers.remove(old)
+        add(data, name=name)
 
     def _affine(self, result):
         source = self.inputs[result["apply_to"]]
@@ -108,7 +118,14 @@ class ResultPresenter:
         for i, row in enumerate(rows[1:]):
             for j, cell in enumerate(row):
                 widget.setItem(i, j, QTableWidgetItem(cell))
+        key = (self.app, result["name"])
+        if result["name"] in self.replace and key in self.docks:
+            try:
+                self.viewer.window.remove_dock_widget(self.docks.pop(key))
+            except Exception:  # noqa: BLE001 - the user closed it already
+                self.docks.pop(key, None)
         self.viewer.window.add_dock_widget(widget, name=result["name"], area="bottom")
+        self.docks[key] = widget
         shown = (
             "%d rows" % (len(rows) - 1)
             if not hidden

@@ -44,6 +44,7 @@ def _tool_names(schema):
 class _Signals(QObject):
     progress = Signal(object, object)
     done = Signal(object)
+    choices = Signal(object, object)  # (request number, list of options or None)
 
 
 class LabConstrictorWidget(QWidget):
@@ -71,6 +72,14 @@ class LabConstrictorWidget(QWidget):
         self._signals = _Signals()
         self._signals.progress.connect(self._on_progress)
         self._signals.done.connect(self._on_done)
+        self._signals.choices.connect(self._on_choices)
+        self._choice_boxes = {}  # ChoicesFrom parameter -> its dropdown
+        self._choice_seq = {}  # parameter -> number of the newest question; older answers are dropped
+        self._choice_timer = QTimer(self)
+        self._choice_timer.setSingleShot(True)
+        self._choice_timer.timeout.connect(self._resolve_choices)
+        self._docks = {}  # (app, table name) -> dock widget, so that Replace can swap it
+        self._group_members = {}  # collapsible group -> widgets
         self._build_layout()
         if self.viewer is not None:
             # Layer choosers must follow the layer list even if this widget was built before it was docked.
@@ -175,7 +184,9 @@ class LabConstrictorWidget(QWidget):
         self.file_sources = self._add_file_sources(tool)
         self.unset_toggles = self._add_unset_toggles(tool)
         self._apply_presentation(tool)
+        self._add_choice_boxes(tool)
         self.form_holder.addWidget(self.gui.native)
+        self._schedule_choices(0)
         for param in tool["inputs"]:
             if param.get("pixel_size_of"):
                 self._link_calibration(param["pixel_size_of"], param["name"])
@@ -189,6 +200,8 @@ class LabConstrictorWidget(QWidget):
             self.file_sources = {}
             self.unset_toggles = {}
             self.advanced_toggle, self._members = None, {}
+            self._choice_boxes, self._group_members = {}, {}
+            self._choice_seq = {}  # an answer still on its way belongs to the form that is gone
 
     def _make_form(self, tool):
         from napari.layers import Image, Labels
@@ -279,22 +292,145 @@ class LabConstrictorWidget(QWidget):
                 )
             group = p.get("group")
             if group and group != previous_group:
-                heading = mw.Label(value=group, label="")
-                heading.native.setStyleSheet("font-weight: bold; padding-top: 6px;")
+                if p.get("group_collapsed"):
+                    heading = self._accordion_heading(group)
+                else:
+                    heading = mw.Label(value=group, label="")
+                    heading.native.setStyleSheet("font-weight: bold; padding-top: 6px;")
                 self.gui.insert(list(self.gui).index(first), heading)
                 if p.get("advanced"):
                     advanced_widgets.append(heading)
             previous_group = group or previous_group
+            if p.get("group_collapsed") and group:
+                self._group_members.setdefault(group, []).extend(self._members[p["name"]])
             if p.get("advanced"):
                 advanced_widgets.extend(self._members[p["name"]])
         for widget in advanced_widgets:
             widget.visible = False
+        for group, widgets in self._group_members.items():  # accordion sections start folded
+            self._set_group_open(group, widgets, False)
         for p in inputs:  # a parameter's rule is re-evaluated whenever its controlling parameter changes
             rule = p.get("enabled_when")
             if rule:
                 controller = self.gui[rule["param"]]
                 controller.changed.connect(lambda *_: self._refresh_enabled())
         self._refresh_enabled()
+
+    # ---- accordion groups (Collapsed) ----
+    def _accordion_heading(self, group):
+        button = mw.PushButton(text="\u25b8 " + group, label="", gui_only=True)
+        button.native.setFlat(True)
+        button.native.setStyleSheet("font-weight: bold; text-align: left; padding-top: 6px;")
+        button.native.setProperty("lc_group", group)
+        button.changed.connect(lambda *_: self._toggle_group(group, button))
+        self._group_heading = getattr(self, "_group_heading", {})
+        self._group_heading[group] = button
+        return button
+
+    def _toggle_group(self, group, button):
+        widgets = self._group_members[group]
+        self._set_group_open(group, widgets, not all(w.visible for w in widgets))
+
+    def _set_group_open(self, group, widgets, opened):
+        for w in widgets:
+            w.visible = opened
+        button = getattr(self, "_group_heading", {}).get(group)
+        if button is not None:
+            button.text = ("\u25be " if opened else "\u25b8 ") + group
+
+    # ---- dynamic choices (ChoicesFrom) ----
+    def _add_choice_boxes(self, tool):
+        """A dropdown beside the text field of a ChoicesFrom parameter. The text field stays the value (what is sent); the
+        dropdown, when the source tool could answer, hides it and writes into it. When it cannot answer, the text field shows."""
+        self._choice_boxes = {}
+        for p in tool["inputs"]:
+            src = p.get("choices_from")
+            if not src:
+                continue
+            field = self.gui[p["name"]]
+            box = mw.ComboBox(choices=[""], label=p["label"], tooltip=p.get("description", ""), gui_only=True)
+            box.visible = False
+            self.gui.insert(list(self.gui).index(field) + 1, box)
+            box.changed.connect(lambda value, f=field: setattr(f, "value", value or ""))
+            self._choice_boxes[p["name"]] = box
+            for name in src["depends"]:
+                self.gui[name].changed.connect(lambda *_: self._schedule_choices(400))
+
+    def _schedule_choices(self, delay_ms):
+        if self._choice_boxes:
+            self._choice_timer.start(delay_ms)
+
+    def _choice_inputs(self, source, depends, tool):
+        """The request for the source tool from the current form, or None while a needed value is missing."""
+        values = {}
+        by_name = {p["name"]: p for p in tool["inputs"]}
+        for name in depends:
+            value = self._control_value(name)
+            if value is None or str(value) in ("", "."):
+                return None
+            if by_name[name]["type"] == "folder" and not Path(value).is_dir():
+                return None
+            values[name] = str(value) if isinstance(value, Path) else value
+        return values
+
+    def _resolve_choices(self):
+        tool = self.tool
+        if not tool or self.gui is None or not self._choice_boxes:
+            return
+        if self.task is not None and not self.task.done.is_set():
+            self._schedule_choices(1500)  # the worker is busy with a run; ask again afterwards
+            return
+        app = self.app_box.value
+        for p in tool["inputs"]:
+            src = p.get("choices_from")
+            if not src or p["name"] not in self._choice_boxes:
+                continue
+            inputs = self._choice_inputs(src["tool"], src["depends"], tool)
+            number = self._choice_seq[p["name"]] = self._choice_seq.get(p["name"], 0) + 1
+            if inputs is None:
+                self._signals.choices.emit((number, p["name"]), None)
+                continue
+            threading.Thread(
+                target=self._ask_choices, args=(app, src, inputs, number, p["name"]), daemon=True
+            ).start()
+
+    def _ask_choices(self, app, src, inputs, number, name):
+        options = None
+        worker = None
+        job_dir = tempfile.mkdtemp(prefix="lcchoices_")
+        try:
+            worker = self._workers.acquire(app, reuse=True)
+            task = worker.task(src["tool"], {**inputs, JOB_DIR_KEY: job_dir})
+            task.wait()
+            if task.status == "COMPLETE":
+                for result in task.outputs["results"]:
+                    values = result.get("values", {}) if isinstance(result, dict) else {}
+                    if isinstance(values.get(src["field"]), list):
+                        options = [str(v) for v in values[src["field"]]]
+                        break
+        except Exception:  # noqa: BLE001 - never blocks the form: the text field remains
+            log.error("napari: could not ask %s for choices", src.get("tool"), exc_info=True)
+        finally:
+            if worker is not None:
+                self._workers.release(app, worker, keep=worker.alive)
+            shutil.rmtree(job_dir, ignore_errors=True)
+        self._signals.choices.emit((number, name), options)
+
+    def _on_choices(self, key, options):
+        number, name = key
+        box = self._choice_boxes.get(name) if self.gui is not None else None
+        if box is None or number != self._choice_seq.get(name):
+            return  # a late answer for another question or another form
+        field = self.gui[name]
+        if not options:
+            box.visible = False
+            field.visible = True
+            return
+        current = field.value
+        box.choices = [""] + options
+        box.value = current if current in options else ""
+        field.visible = False
+        box.visible = True
 
     def _control_value(self, name):
         source = self.file_sources.get(name)
@@ -398,7 +534,8 @@ class LabConstrictorWidget(QWidget):
             **form_values,
             **{n: FileInput(Path(e.value)) for n, e in self.file_sources.items() if _is_set(e.value)},
         }
-        self.presenter = ResultPresenter(self.viewer, self._run_app, shown_inputs)
+        replace = {o["name"] for o in self._run_tool["outputs"] if o.get("replace")}
+        self.presenter = ResultPresenter(self.viewer, self._run_app, shown_inputs, replace, self._docks)
         self._set_running(True)
         self._started = time.perf_counter()
         worker = None
@@ -559,6 +696,27 @@ class LabConstrictorWidget(QWidget):
             self.last_details += "\n\nnot shown:\n" + "\n".join(failed)
         else:
             self.status.setText("✔ done in %.1fs  %s" % (self.timings["run_wall_s"], text))
+        self._clear_after_run()
+        self._schedule_choices(200)  # a run may have changed what the source tool answers (e.g. a game was prepared)
+
+    def _clear_after_run(self):
+        """ClearAfterRun parameters go back to their default (or unset) once a run has succeeded."""
+        tool = self._run_tool
+        if self.gui is None or tool is not self.tool:
+            return
+        for p in tool["inputs"]:
+            if not p.get("clear_after_run"):
+                continue
+            widget = self.gui[p["name"]]
+            toggle = self.unset_toggles.get(p["name"])
+            if toggle is not None:
+                toggle.value = False
+            default = p.get("default", "" if p["type"] == "string" else None)
+            if default is not None:
+                widget.value = default
+            box = self._choice_boxes.get(p["name"])
+            if box is not None:
+                box.value = ""
 
     def _record_run(self, task):
         stderr = "".join(self.worker.stderr)
