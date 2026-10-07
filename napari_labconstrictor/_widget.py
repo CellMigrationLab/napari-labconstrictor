@@ -15,7 +15,7 @@ from labconstrictor_tools.protocol import JOB_DIR_KEY
 from magicgui import magicgui
 from magicgui import widgets as mw
 from qtpy.QtCore import QObject, Qt, QTimer, Signal
-from qtpy.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from ._results import COULD_NOT_DISPLAY, FileInput, ResultPresenter
 from ._schema import presentation_order, rule_satisfied, signature_from_schema
@@ -98,6 +98,12 @@ class LabConstrictorWidget(QWidget):
         self.bar.setVisible(False)
         self.status = QLabel("idle")
         self.status.setWordWrap(True)
+        self.message_label = QLabel("")  # message results of the last run (markdown); hidden when there is none
+        self.message_label.setWordWrap(True)
+        self.message_label.setTextFormat(Qt.MarkdownText)
+        self.message_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.message_label.setStyleSheet("QLabel { border-left: 3px solid #5a9fd4; padding: 4px 8px; }")
+        self.message_label.setVisible(False)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setEnabled(False)
         self.rescan_button = QPushButton("Rescan apps")
@@ -120,14 +126,30 @@ class LabConstrictorWidget(QWidget):
         form_container = QWidget()
         form_container.setLayout(self.form_holder)
         self.form_holder.setContentsMargins(0, 0, 0, 0)
+        self.form_holder.addStretch(1)  # a short form sits at the top instead of being spread over the dock
         self.form_scroll = QScrollArea()
         self.form_scroll.setWidgetResizable(True)
         self.form_scroll.setFrameShape(QFrame.NoFrame)
         self.form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.form_scroll.setMinimumHeight(180)
         self.form_scroll.setWidget(form_container)
         layout.addWidget(self.form_scroll, 1)
         layout.addWidget(self.bar)
-        layout.addWidget(self.status)
+        # Status and message can be long (a readout, many values): they scroll in a box of limited height, so they never squeeze the form.
+        outcome = QWidget()
+        outcome_layout = QVBoxLayout(outcome)
+        outcome_layout.setContentsMargins(0, 0, 0, 0)
+        outcome_layout.addWidget(self.message_label)  # the readout first: it is what the person came for
+        outcome_layout.addWidget(self.status)
+        outcome_layout.addStretch(1)
+        self.outcome_scroll = QScrollArea()
+        self.outcome_scroll.setWidgetResizable(True)
+        self.outcome_scroll.setFrameShape(QFrame.NoFrame)
+        self.outcome_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.outcome_scroll.setMaximumHeight(320)
+        self.outcome_scroll.setMinimumHeight(110)
+        self.outcome_scroll.setWidget(outcome)
+        layout.addWidget(self.outcome_scroll, 1)
         layout.addWidget(self.reuse_box)
         layout.addLayout(buttons)
         self.cancel_button.clicked.connect(self.cancel)
@@ -194,7 +216,8 @@ class LabConstrictorWidget(QWidget):
         self.unset_toggles = self._add_unset_toggles(tool)
         self._apply_presentation(tool)
         self._add_choice_boxes(tool)
-        self.form_holder.addWidget(self.gui.native)
+        self.gui.native.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.form_holder.insertWidget(0, self.gui.native)
         self._schedule_choices(0)
         for param in tool["inputs"]:
             if param.get("pixel_size_of"):
@@ -442,9 +465,13 @@ class LabConstrictorWidget(QWidget):
             box.visible = False
             field.visible = True
             return
-        current = field.value
-        box.choices = [""] + options
-        box.value = current if current in options else ""
+        current = field.value or ""
+        param = next((p for p in self.tool["inputs"] if p["name"] == name), {})
+        # A blank entry means "no answer" (unset for an optional parameter, or when the field is empty). A value the field already
+        # holds (its default, or what was typed) stays selectable even when the source tool does not list it: never silently dropped.
+        entries = ([""] if param.get("nullable") or not current else []) + ([current] if current and current not in options else []) + options
+        box.choices = entries
+        box.value = current if current in entries else entries[0]
         field.visible = False
         box.visible = True
 
@@ -551,6 +578,7 @@ class LabConstrictorWidget(QWidget):
             **{n: FileInput(Path(e.value)) for n, e in self.file_sources.items() if _is_set(e.value)},
         }
         replace = {o["name"] for o in self._run_tool["outputs"] if o.get("replace")}
+        self.message_label.setVisible(False)
         self.presenter = ResultPresenter(self.viewer, self._run_app, shown_inputs, replace, self._docks)
         self._set_running(True)
         self._started = time.perf_counter()
@@ -702,6 +730,9 @@ class LabConstrictorWidget(QWidget):
             shutil.rmtree(
                 self._job_dir, ignore_errors=True
             )  # inputs and outputs share the job dir; results are in the viewer
+        if self.presenter.messages:
+            self.message_label.setText("\n\n".join(self.presenter.messages))
+            self.message_label.setVisible(True)
         failed = [s for s in summaries if s and s.startswith(COULD_NOT_DISPLAY)]
         text = "  ".join(s for s in summaries if s)
         if failed:  # the tool succeeded but part of its output is not in the viewer: not a plain success
