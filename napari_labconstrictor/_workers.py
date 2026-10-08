@@ -1,5 +1,7 @@
 """Keep one worker per app alive between runs (a repeat run of a heavy tool is typically seconds instead of tens of seconds), and never leak them."""
 
+from __future__ import annotations
+
 import atexit
 import time
 
@@ -9,13 +11,17 @@ IDLE_SECONDS = 600  # an unused worker (and the memory its imports hold) is clos
 
 
 class WorkerCache:
-    def __init__(self, idle_seconds=IDLE_SECONDS):
+    """Workers kept per app between runs; `acquire`/`release` hand one out and take it back, `close_all` runs at exit."""
+
+    def __init__(self, idle_seconds: float = IDLE_SECONDS) -> None:
         self.idle_seconds = idle_seconds
-        self._workers = {}  # app name -> [WorkerProcess, last_used]  (idle, ready for the next run)
-        self._active = set()  # workers handed out by acquire() and not released yet
+        self._workers: dict[str, list] = (
+            {}
+        )  # app name -> [WorkerProcess, last_used]  (idle, ready for the next run)
+        self._active: set = set()  # workers handed out by acquire() and not released yet
         atexit.register(self.close_all)
 
-    def acquire(self, app, reuse=True):
+    def acquire(self, app: str, reuse: bool = True) -> client.WorkerProcess:
         """A running worker for `app`: the cached one if allowed and still alive, otherwise a new one."""
         cached = self._workers.pop(app, None)
         if cached and cached[0].alive and reuse:
@@ -27,7 +33,7 @@ class WorkerCache:
         self._active.add(worker)
         return worker
 
-    def release(self, app, worker, keep):
+    def release(self, app: str, worker: client.WorkerProcess, keep: bool) -> None:
         """Hand the worker back after a run. Only healthy workers are kept."""
         self._active.discard(worker)
         if keep and worker.alive:
@@ -40,17 +46,19 @@ class WorkerCache:
         else:
             worker.close(timeout=2) if worker.alive else None
 
-    def discard(self, app):
+    def discard(self, app: str) -> None:
+        """Close and forget the idle worker of `app`, if any."""
         cached = self._workers.pop(app, None)
         if cached:
             cached[0].close(timeout=2)
 
-    def reap_idle(self):
+    def reap_idle(self) -> None:
+        """Close the workers that have been idle longer than `idle_seconds`."""
         now = time.monotonic()
         for app in [a for a, (_, used) in self._workers.items() if now - used > self.idle_seconds]:
             self.discard(app)
 
-    def close_all(self):
+    def close_all(self) -> None:
         for app in list(self._workers):
             self.discard(app)
         for worker in list(self._active):  # also the ones that are running a task right now

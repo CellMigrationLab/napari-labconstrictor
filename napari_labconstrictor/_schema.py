@@ -1,8 +1,13 @@
 """Schema -> `inspect.Signature` that magicgui turns into widgets. This is the whole schema->GUI translation."""
 
+from __future__ import annotations
+
 import inspect
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
+
+Tool = dict[str, Any]  # one tool of a registry schema, as the JSON file holds it
+Param = dict[str, Any]  # one input of a tool
 
 _INT_RANGE = (-(2**31), 2**31 - 1)  # what a Qt spin box can hold: used only when the schema gives no bound
 _FLOAT_RANGE = (-1e15, 1e15)
@@ -11,16 +16,16 @@ _NULLABLE_SCALARS = ("integer", "float", "string", "choice")
 _LAYER_TYPES = ("image", "labels")
 
 
-def presentation_order(tool):
+def presentation_order(tool: Tool) -> Tool:
     """The tool with its inputs in the order the form shows them: parameters of one `group` together (where the group first
     appears), `advanced` ones after all the others. Without group/advanced hints the tool is returned unchanged.
     """
     inputs = tool["inputs"]
     if not any(p.get("group") or p.get("advanced") for p in inputs):
         return tool
-    first = {}
+    first: dict[tuple[bool, str], int] = {}
 
-    def rank(index, p):
+    def rank(index: int, p: Param) -> int:
         group = p.get("group")
         if not group:
             return index
@@ -30,20 +35,20 @@ def presentation_order(tool):
     return {**tool, "inputs": [p for _, p in order]}
 
 
-def rule_satisfied(rule, value):
+def rule_satisfied(rule: dict[str, Any], value: Any) -> bool:
     """enabled_when: `equals` given = the value is one of them; otherwise the controlling parameter is set / true."""
     if "equals" in rule:
         return value in rule["equals"]
     return value is not None and value is not False and value != ""
 
 
-def signature_from_schema(tool, layer_classes):
+def signature_from_schema(tool: Tool, layer_classes: dict[str, type]) -> inspect.Signature:
     """Build the signature for one tool. `layer_classes` maps 'image'/'labels' to napari layer classes."""
     parameters = [_parameter(p, layer_classes) for p in presentation_order(tool)["inputs"]]
     return inspect.Signature(parameters)
 
 
-def _parameter(param, layer_classes):
+def _parameter(param: Param, layer_classes: dict[str, type]) -> inspect.Parameter:
     kind = param["type"]
     annotation, options = _annotation(param, layer_classes)
     if param.get("description"):
@@ -67,8 +72,9 @@ def _parameter(param, layer_classes):
     )
 
 
-def _annotation(param, layer_classes):
-    kind, options = param["type"], {}
+def _annotation(param: Param, layer_classes: dict[str, type]) -> tuple[Any, dict[str, Any]]:
+    kind = param["type"]
+    options: dict[str, Any] = {}
     if kind in _LAYER_TYPES:
         return layer_classes[kind], options
     if kind in _PATH_TYPES:

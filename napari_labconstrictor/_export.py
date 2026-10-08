@@ -1,15 +1,26 @@
 """Form values -> files for the worker: layers and selections written as TIFF, channel extraction. Pure helpers (no widget state)."""
 
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
+
+if TYPE_CHECKING:  # napari and magicgui ship no usable stubs here: their objects are annotated by name only
+    from magicgui.widgets import FileEdit
+    from napari import Viewer
+    from napari.layers import Image, Labels, Shapes
 
 MAX_EXPORT_BYTES = 4 * 1024**3  # refuse to write a layer larger than this to a temporary TIFF
 
 
-def is_set(path):
+def is_set(path: Any) -> bool:
+    """True when a FileEdit/Path value names something (an empty FileEdit gives None, "" or ".")."""
     return path is not None and str(path) not in ("", ".")
 
 
-def _selected_shapes_layer(viewer, label):
+def _selected_shapes_layer(viewer: Viewer, label: str) -> Shapes:
     from napari.layers import Shapes
 
     layer = next((item for item in viewer.layers.selection if isinstance(item, Shapes)), None)
@@ -22,7 +33,9 @@ def _selected_shapes_layer(viewer, label):
     return layer
 
 
-def _region_image_shape(label, source, image):
+def _region_image_shape(
+    label: str, source: FileEdit | None, image: Image | Labels | None
+) -> tuple[tuple[int, ...], tuple[float, ...] | None]:
     """(yx shape, yx scale or None) of the image a region belongs to: the chosen file, else the chosen layer."""
     if source is not None and is_set(source.value):
         import tifffile
@@ -35,7 +48,13 @@ def _region_image_shape(label, source, image):
     raise ValueError("'%s': choose the image it belongs to first" % label)
 
 
-def selection_mask(viewer, param, source, image, job_dir):
+def selection_mask(
+    viewer: Viewer,
+    param: dict[str, Any],
+    source: FileEdit | None,
+    image: Image | Labels | None,
+    job_dir: Path,
+) -> str:
     """The shapes of the selected Shapes layer as a label image the size of the image named by `param["region_of"]`
     (labels 1..N), written to `job_dir`. `source` is that image's "or file" widget (or None), `image` its layer (or None).
     Anything that makes this impossible is said to the person, never guessed around."""
@@ -57,7 +76,7 @@ def selection_mask(viewer, param, source, image, job_dir):
     return str(path)
 
 
-def channel_file(path, index, label, target):
+def channel_file(path: Path, index: int, label: str, target: Path) -> Path:
     """One channel of a multi-channel TIFF, written as its own TIFF."""
     import tifffile
 
@@ -75,7 +94,7 @@ def channel_file(path, index, label, target):
     return target
 
 
-def export_layer(layer, picked, path):
+def export_layer(layer: Image | Labels, picked: int | None, path: Path) -> None:
     """Write an image/labels layer to `path` as TIFF (full resolution; one colour of an RGB layer when `picked` is an index)."""
     from tifffile import imwrite
 
