@@ -4,7 +4,7 @@ The LabConstrictor widget lists tools registered by installed applications. Tool
 
 ## Scientific applications
 
-[Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground) can test the widget. [Guess the Condition](https://github.com/CellMigrationLab/GuessTheCondition) and [VLab4Mic](https://github.com/CellMigrationLab/LabConstrictor-VLab4Mic) document Napari workflows. See the [Toolkit application list](https://github.com/CellMigrationLab/LabConstrictor-Tools#applications) for more applications and installation links.
+[Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground) can test the widget. [Guess the Condition](https://github.com/CellMigrationLab/GuessTheCondition) and [VLab4Mic](https://github.com/CellMigrationLab/LabConstrictor-VLab4Mic) document Napari workflows. See the [Toolkit application list](https://github.com/CellMigrationLab/LabConstrictor-Tools) for more applications and installation links.
 
 ## First run
 
