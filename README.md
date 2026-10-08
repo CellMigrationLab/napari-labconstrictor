@@ -51,6 +51,7 @@ registers each app; for a manual registration see the Tools repository: `labcons
     xvfb-run -a python test_channels.py            # PickChannel: channel chooser for RGB layers and multi-channel TIFF files
     xvfb-run -a python test_widget_hardening.py    # failed starts, unshowable results, full disk, duplicate labels, optional yes/no
     xvfb-run -a python test_parity_dimensions.py   # parity with the other hosts: a stack into a 2D tool is refused with the worker's sentence
+    xvfb-run -a python test_parity_messages.py     # missing_parameter / file_not_found / channel sentences before a run
     xvfb-run -a python test_parity_results.py      # outline cap counts features; the sentence for a result type this version does not know
     xvfb-run -a python test_parity_region.py       # RegionOf: refused for an image given as a file; at most 65 535 shapes, 16 bit
     xvfb-run -a python test_parity_points_frame.py # points/outlines without apply_to go on the first image input

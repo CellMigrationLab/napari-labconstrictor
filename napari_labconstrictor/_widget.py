@@ -925,7 +925,8 @@ class LabConstrictorWidget(QWidget):
             return _OMIT
         if value is None or (isinstance(value, Path) and str(value) in ("", ".")):
             if param["required"]:
-                raise ValueError("'%s' is required" % param["label"])
+                hint = ": open an image or choose a file" if param["type"] in ("image", "labels") else ""
+                raise ValueError("[missing_parameter] '%s' is required%s" % (param["label"], hint))
             return _OMIT
         if param["type"] in ("image", "labels"):
             path = job_dir / (name + ".tif")
@@ -937,7 +938,7 @@ class LabConstrictorWidget(QWidget):
 
     def _export_file_source(self, param: Param, path: Path, job_dir: Path) -> str:
         if not path.is_file():
-            raise ValueError("'%s': file not found: %s" % (param["label"], path))
+            raise ValueError("[file_not_found] image file not found: %s" % path)
         picked = self._picked_channel(param["name"])
         if picked is not None:  # PickChannel: the file's chosen channel is written for the worker
             path = channel_file(path, picked, param["label"], job_dir / (param["name"] + ".tif"))

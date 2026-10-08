@@ -96,7 +96,7 @@ def channel_file(path: Path, index: int, label: str, target: Path) -> Path:
         return path
     if index >= data.shape[axes.index("C")]:
         raise ValueError(
-            "'%s': channel %d was asked for, but the file has %d"
+            "'%s': channel %d was asked for, but the image has %d channels"
             % (label, index + 1, data.shape[axes.index("C")])
         )
     tifffile.imwrite(target, np.take(data, index, axis=axes.index("C")))
