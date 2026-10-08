@@ -78,6 +78,8 @@ class ResultPresenter:
 
     def show(self, result: Any) -> str:
         kind = result.get("type", "<no type>") if isinstance(result, dict) else "<not an object>"
+        if isinstance(result, dict) and "type" in result and kind not in self._handlers:
+            return self._unknown(kind, result)
         try:
             return self._handlers[kind](result) or ""
         except Exception as error:  # noqa: BLE001 - a display problem must not hide the other results
@@ -87,6 +89,17 @@ class ResultPresenter:
                 kind,
                 repr(error) if isinstance(error, KeyError) else error,
             )
+
+    def _unknown(self, kind: Any, result: Result) -> str:
+        """A result type this version does not know: say so in one sentence, with its name and the file to look in."""
+        log.warning("napari: a result of the unknown type %r (%s)", kind, result.get("name"))
+        where = " (name '%s'%s)" % (
+            result.get("name"),
+            ", file %s" % result["path"] if "path" in result else "",
+        )
+        return "%s%s: the tool returned a result of the type '%s', which this version of napari LabConstrictor cannot show%s)" % (
+            COULD_NOT_DISPLAY, kind, kind, where,
+        )  # fmt: skip
 
     def _frame_scale(self, result: Result) -> tuple[float, float]:
         """The (y, x) scale of the image a points/shapes result is placed on: the image named by `apply_to`, else the
