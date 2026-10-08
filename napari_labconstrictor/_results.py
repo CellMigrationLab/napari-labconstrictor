@@ -1,11 +1,20 @@
 """Show typed tool results in napari. Switches on the result *type* only; knows nothing about any app."""
 
+from __future__ import annotations
+
 import csv
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from labconstrictor_tools import log
 from qtpy.QtWidgets import QTableWidget, QTableWidgetItem
+
+if TYPE_CHECKING:  # napari and Qt objects are annotated by name only (no usable stubs)
+    from napari import Viewer
+    from qtpy.QtWidgets import QWidget
+
+Result = dict[str, Any]  # one typed result of a tool: {"type": ..., "name": ..., ...}
 
 COULD_NOT_DISPLAY = "(could not display "
 MAX_DISPLAY_BYTES = (
@@ -15,19 +24,22 @@ MAX_TABLE_ROWS = 100_000  # rows shown in a table dock; the file itself always h
 
 
 MAX_SHAPES = 50_000  # outlines shown; the rest are counted in a message
+POINT_SIZE = 8  # display size of a point result (napari points are drawn this many pixels wide)
+OUTLINE_EDGE_WIDTH = 1  # line width of a shapes result
+AFFINE_OPACITY = 0.8  # an alignment overlay stays see-through, so the image under it can be compared
 
 
 class FileInput:
     """Stands in for a layer when an image parameter was given as a file (needed to place affine results)."""
 
-    def __init__(self, path):
+    def __init__(self, path: Path) -> None:
         from ._units import microns_yx_from_tiff
 
         self.path, self.name = path, getattr(path, "name", str(path))
         self.scale = microns_yx_from_tiff(path) or (1.0, 1.0)  # (y, x)
 
     @property
-    def data(self):
+    def data(self) -> np.ndarray:
         from tifffile import imread
 
         return imread(self.path)
@@ -36,12 +48,19 @@ class FileInput:
 class ResultPresenter:
     """`show(result)` adds layers/docks to the viewer and returns a short text for the status line."""
 
-    def __init__(self, viewer, app_name, inputs, replace=(), docks=None):
+    def __init__(
+        self,
+        viewer: Viewer,
+        app_name: str,
+        inputs: dict[Any, Any],  # looked up with .get(None) when a result names no input
+        replace: Any = (),
+        docks: dict[tuple[str, str], QWidget] | None = None,
+    ) -> None:
         self.viewer, self.app, self.inputs = viewer, app_name, inputs  # inputs: the layers chosen in the form
         self.replace = set(replace)  # output names whose previous result this run replaces (Replace())
         self.docks = docks if docks is not None else {}  # (app, table name) -> dock widget kept between runs
-        self.tables = {}
-        self.messages = []  # texts of message results, shown by the widget below the status line
+        self.tables: dict[str, list[list[str]]] = {}
+        self.messages: list[str] = []  # texts of message results, shown by the widget below the status line
         self._handlers = {
             "image": self._image,
             "labels": self._image,
@@ -54,7 +73,7 @@ class ResultPresenter:
             "file": self._file,
         }
 
-    def show(self, result):
+    def show(self, result: Any) -> str:
         kind = result.get("type", "<no type>") if isinstance(result, dict) else "<not an object>"
         try:
             return self._handlers[kind](result) or ""
@@ -66,10 +85,10 @@ class ResultPresenter:
                 repr(error) if isinstance(error, KeyError) else error,
             )
 
-    def _layer_name(self, result):
+    def _layer_name(self, result: Result) -> str:
         return "%s:%s" % (self.app, result["name"])
 
-    def _image(self, result):
+    def _image(self, result: Result) -> None:
         import tifffile
 
         with tifffile.TiffFile(
@@ -94,7 +113,7 @@ class ResultPresenter:
             self.viewer.layers.remove(old)
         add(data, name=name)
 
-    def _affine(self, result):
+    def _affine(self, result: Result) -> None:
         source = self.inputs[result["apply_to"]]
         target = self.inputs.get(result.get("relative_to"))
         matrix = np.array(result["matrix_yx"])
@@ -114,10 +133,10 @@ class ResultPresenter:
             scale=(1, 1),
             colormap="magenta",
             blending="additive",
-            opacity=0.8,
+            opacity=AFFINE_OPACITY,
         )
 
-    def _table(self, result):
+    def _table(self, result: Result) -> str:
         import itertools
 
         with open(result["path"], encoding="utf-8", newline="") as handle:
@@ -154,10 +173,10 @@ class ResultPresenter:
         )
         return "table '%s' (%s)" % (result["name"], shown)
 
-    def _message(self, result):
+    def _message(self, result: Result) -> None:
         self.messages.append(result["text"])
 
-    def _points(self, result):
+    def _points(self, result: Result) -> str:
         import pandas as pd
 
         frame = pd.read_csv(result["path"])
@@ -175,18 +194,20 @@ class ResultPresenter:
             name=name,
             properties=properties or None,
             scale=scale,
-            size=8,
+            size=POINT_SIZE,
             face_color="yellow",
             border_color="black",
         )
         return "points '%s' (%d)" % (result["name"], len(frame))
 
-    def _shapes(self, result):
+    def _shapes(self, result: Result) -> str:
         """GeoJSON outlines -> one polygon per part (Napari polygons have no holes: the outer boundary is drawn, and a note says so)."""
         import json
 
         collection = json.loads(Path(result["path"]).read_text(encoding="utf-8"))
-        polygons, rows, with_holes = [], [], 0
+        polygons: list[np.ndarray] = []
+        rows: list[dict[str, Any]] = []
+        with_holes = 0
         for feature in collection.get("features", []):
             geometry = feature["geometry"]
             parts = [geometry["coordinates"]] if geometry["type"] == "Polygon" else geometry["coordinates"]
@@ -210,7 +231,7 @@ class ResultPresenter:
         if polygons:
             self.viewer.add_shapes(
                 polygons, shape_type="polygon", name=name, properties=properties or None, scale=scale,
-                edge_color="yellow", face_color="transparent", edge_width=1,
+                edge_color="yellow", face_color="transparent", edge_width=OUTLINE_EDGE_WIDTH,
             )  # fmt: skip
         else:
             self.viewer.add_shapes(name=name, scale=scale)
@@ -226,14 +247,14 @@ class ResultPresenter:
         return "outlines '%s' (%d)" % (result["name"], len(polygons))
 
     @staticmethod
-    def _values(result):
+    def _values(result: Result) -> str:
         return ", ".join(
             "%s=%s" % (key, round(value, 4) if isinstance(value, float) else value)
             for key, value in result["values"].items()
         )
 
     @staticmethod
-    def _file(result):
+    def _file(result: Result) -> str:
         if not Path(result["path"]).is_file():
             raise FileNotFoundError("the tool reported the file %s but it does not exist" % result["path"])
         return "file: " + result["path"]
