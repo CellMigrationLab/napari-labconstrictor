@@ -10,7 +10,9 @@ Tool = dict[str, Any]  # one tool of a registry schema, as the JSON file holds i
 Param = dict[str, Any]  # one input of a tool
 
 _INT_RANGE = (-(2**31), 2**31 - 1)  # what a Qt spin box can hold: used only when the schema gives no bound
-_FLOAT_RANGE = (-1e15, 1e15)
+_FLOAT_RANGE = (-1e15, 1e15)  # likewise for a float spin box
+_FINE_STEP = 1e-4  # Qt rounds to the step: small enough for calibrations such as 0.325 um/px
+_COARSE_STEP = 0.01  # step of a float that is neither a unit-bearing value nor below 1
 _PATH_TYPES = ("table", "file", "folder")
 _NULLABLE_SCALARS = ("integer", "float", "string", "choice")
 _LAYER_TYPES = ("image", "labels")
@@ -100,7 +102,9 @@ def _annotation(param: Param, layer_classes: dict[str, type]) -> tuple[Any, dict
     options["max"] = param.get("maximum", high)
     if not is_int:
         # Qt rounds to the step, which must never corrupt calibrations such as 0.325 um/px.
-        options["step"] = 1e-4 if param.get("unit") or abs(param.get("default", 1)) < 1 else 0.01
+        options["step"] = (
+            _FINE_STEP if param.get("unit") or abs(param.get("default", 1)) < 1 else _COARSE_STEP
+        )
     if (
         param.get("widget") == "slider"
         and not param.get("nullable")

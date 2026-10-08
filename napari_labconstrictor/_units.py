@@ -13,6 +13,8 @@ from pint.errors import PintError
 # (tifffile.TiffFileError is a ValueError), a damaged or odd tag (ValueError/KeyError/IndexError/TypeError/struct.error).
 TIFF_READ_ERRORS = (OSError, ValueError, KeyError, IndexError, TypeError, struct.error)
 
+SQUARE_PIXEL_TOLERANCE = 1e-3  # Y and X pixel sizes closer than this (relative) count as square: no warning
+
 _unparsable_units: set[str] = set()  # units already reported: the log says it once, not once per call
 
 
@@ -64,7 +66,7 @@ def microns_per_pixel(layer: Any) -> tuple[float | None, bool]:
 
 def anisotropy_note(yx: tuple[float, float] | None) -> str | None:
     """Text for the user when the pixel is not square (a single pixel-size value cannot describe it), else None."""
-    if yx is None or abs(yx[0] - yx[1]) <= 1e-3 * max(abs(yx[0]), abs(yx[1])):
+    if yx is None or abs(yx[0] - yx[1]) <= SQUARE_PIXEL_TOLERANCE * max(abs(yx[0]), abs(yx[1])):
         return None
     return "⚠ pixel size differs: Y %.6g µm, X %.6g µm - the tool takes one value and gets X" % yx
 

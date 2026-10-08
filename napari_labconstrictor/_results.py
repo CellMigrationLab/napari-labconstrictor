@@ -24,6 +24,9 @@ MAX_TABLE_ROWS = 100_000  # rows shown in a table dock; the file itself always h
 
 
 MAX_SHAPES = 50_000  # outlines shown; the rest are counted in a message
+POINT_SIZE = 8  # display size of a point result (napari points are drawn this many pixels wide)
+OUTLINE_EDGE_WIDTH = 1  # line width of a shapes result
+AFFINE_OPACITY = 0.8  # an alignment overlay stays see-through, so the image under it can be compared
 
 
 class FileInput:
@@ -130,7 +133,7 @@ class ResultPresenter:
             scale=(1, 1),
             colormap="magenta",
             blending="additive",
-            opacity=0.8,
+            opacity=AFFINE_OPACITY,
         )
 
     def _table(self, result: Result) -> str:
@@ -191,7 +194,7 @@ class ResultPresenter:
             name=name,
             properties=properties or None,
             scale=scale,
-            size=8,
+            size=POINT_SIZE,
             face_color="yellow",
             border_color="black",
         )
@@ -228,7 +231,7 @@ class ResultPresenter:
         if polygons:
             self.viewer.add_shapes(
                 polygons, shape_type="polygon", name=name, properties=properties or None, scale=scale,
-                edge_color="yellow", face_color="transparent", edge_width=1,
+                edge_color="yellow", face_color="transparent", edge_width=OUTLINE_EDGE_WIDTH,
             )  # fmt: skip
         else:
             self.viewer.add_shapes(name=name, scale=scale)

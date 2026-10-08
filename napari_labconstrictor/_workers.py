@@ -8,6 +8,7 @@ import time
 from labconstrictor_tools import client
 
 IDLE_SECONDS = 600  # an unused worker (and the memory its imports hold) is closed after this long
+CLOSE_TIMEOUT_S = 2  # how long a worker gets to exit politely when closed, before it is killed
 
 
 class WorkerCache:
@@ -28,7 +29,7 @@ class WorkerCache:
             worker = cached[0]
         else:
             if cached:
-                cached[0].close(timeout=2)
+                cached[0].close(timeout=CLOSE_TIMEOUT_S)
             worker = client.WorkerProcess(app)
         self._active.add(worker)
         return worker
@@ -41,16 +42,16 @@ class WorkerCache:
                 app
             )  # a second worker for the same app was kept meanwhile: do not leak it
             if displaced and displaced[0] is not worker:
-                displaced[0].close(timeout=2)
+                displaced[0].close(timeout=CLOSE_TIMEOUT_S)
             self._workers[app] = [worker, time.monotonic()]
         else:
-            worker.close(timeout=2) if worker.alive else None
+            worker.close(timeout=CLOSE_TIMEOUT_S) if worker.alive else None
 
     def discard(self, app: str) -> None:
         """Close and forget the idle worker of `app`, if any."""
         cached = self._workers.pop(app, None)
         if cached:
-            cached[0].close(timeout=2)
+            cached[0].close(timeout=CLOSE_TIMEOUT_S)
 
     def reap_idle(self) -> None:
         """Close the workers that have been idle longer than `idle_seconds`."""
@@ -63,4 +64,4 @@ class WorkerCache:
             self.discard(app)
         for worker in list(self._active):  # also the ones that are running a task right now
             self._active.discard(worker)
-            worker.close(timeout=2)
+            worker.close(timeout=CLOSE_TIMEOUT_S)

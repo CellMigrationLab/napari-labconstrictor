@@ -49,6 +49,14 @@ if TYPE_CHECKING:  # annotation only; at runtime napari passes a proxy under the
     from napari import Viewer
 
 CANCEL_GRACE_S = 3.0  # how long a tool gets to honour Cancel before its worker is killed
+REAP_INTERVAL_MS = 30_000  # how often idle workers are looked for (see WorkerCache.reap_idle)
+CHOICES_DEBOUNCE_MS = 400  # wait after a controlling value changes before asking for new ChoicesFrom options
+CHOICES_RETRY_MS = 1500  # a run is using the worker: ask again after this long
+CHOICES_AFTER_RUN_MS = 200  # a finished run may have changed what the source tool answers: ask again
+FORM_MIN_HEIGHT_PX = 180  # the form area never shrinks below this, however small the dock
+OUTCOME_MIN_HEIGHT_PX = 110  # the status/message box: at least a few lines ...
+OUTCOME_MAX_HEIGHT_PX = 320  # ... and at most this tall (longer text scrolls) so it never squeezes the form
+STDERR_TAIL_CHARS = 3000  # worker output kept in the Details report
 _FINISH_TEXT = {"CANCELED": "cancelled"}
 _OMIT = object()  # "leave this parameter out" (None is a real value)
 _NO_RESULT_CODES = ("no_match", "no_result")  # an outcome ("nothing found"), not a fault: shown as a notice
@@ -210,7 +218,7 @@ class LabConstrictorWidget(QWidget):
         self.form_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarAsNeeded
         )  # a form wider than the dock scrolls sideways: nothing is clipped out of reach
-        self.form_scroll.setMinimumHeight(180)
+        self.form_scroll.setMinimumHeight(FORM_MIN_HEIGHT_PX)
         self.form_scroll.setWidget(form_container)
         return self.form_scroll
 
@@ -227,8 +235,8 @@ class LabConstrictorWidget(QWidget):
         self.outcome_scroll.setWidgetResizable(True)
         self.outcome_scroll.setFrameShape(QFrame.NoFrame)
         self.outcome_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.outcome_scroll.setMaximumHeight(320)
-        self.outcome_scroll.setMinimumHeight(110)
+        self.outcome_scroll.setMaximumHeight(OUTCOME_MAX_HEIGHT_PX)
+        self.outcome_scroll.setMinimumHeight(OUTCOME_MIN_HEIGHT_PX)
         self.outcome_scroll.setWidget(outcome)
         return self.outcome_scroll
 
@@ -240,7 +248,7 @@ class LabConstrictorWidget(QWidget):
         self._stderr_mark: int | None = 0  # how much worker output existed when the current run started
         self._reaper = QTimer(self)
         self._reaper.timeout.connect(self._workers.reap_idle)
-        self._reaper.start(30_000)
+        self._reaper.start(REAP_INTERVAL_MS)
         # closing the Napari window deletes this widget without calling closeEvent: stop the workers then too (not only when the
         # whole Python process ends); bound to the cache object, which outlives the widget
         self.destroyed.connect(self._workers.close_all)
@@ -573,7 +581,7 @@ class LabConstrictorWidget(QWidget):
             box.changed.connect(lambda value, f=field, n=p["name"]: self._choice_picked(n, f, value))
             self._choice_boxes[p["name"]] = box
             for name in src["depends"]:
-                self.gui[name].changed.connect(lambda *_: self._schedule_choices(400))
+                self.gui[name].changed.connect(lambda *_: self._schedule_choices(CHOICES_DEBOUNCE_MS))
 
     def _choice_picked(self, name: str, field: Any, value: str | None) -> None:
         """Picking an option is the value (the text field behind it) and, for an optional parameter, also 'set'; the blank entry unsets it."""
@@ -604,7 +612,7 @@ class LabConstrictorWidget(QWidget):
         if not tool or self.gui is None or not self._choice_boxes:
             return
         if self.task is not None and not self.task.done.is_set():
-            self._schedule_choices(1500)  # the worker is busy with a run; ask again afterwards
+            self._schedule_choices(CHOICES_RETRY_MS)  # the worker is busy with a run; ask again afterwards
             return
         app = self.app_box.value
         for p in tool["inputs"]:
@@ -1012,9 +1020,7 @@ class LabConstrictorWidget(QWidget):
             return
         self._report_success(summaries)
         self._clear_after_run()
-        self._schedule_choices(
-            200
-        )  # a run may have changed what the source tool answers (e.g. a game was prepared)
+        self._schedule_choices(CHOICES_AFTER_RUN_MS)
 
     def _show_results(self, task: Any) -> list[str] | None:
         """Show every result of a finished task: the summaries, or None after reporting that they could not be shown."""
@@ -1085,7 +1091,7 @@ class LabConstrictorWidget(QWidget):
         if task.traceback:
             lines += ["", task.traceback]
         if stderr.strip():
-            lines += ["", "worker output (tail):", stderr[-3000:]]
+            lines += ["", "worker output (tail):", stderr[-STDERR_TAIL_CHARS:]]
         lines += ["", "log file: %s" % log.log_path()]  # not its tail: that would show earlier runs
         self.last_details = "\n".join(lines)
         self.details_button.setEnabled(True)
