@@ -507,7 +507,12 @@ class LabConstrictorWidget(QWidget):
             self.file_sources.get(param["region_of"]),
             form_values.get(param["region_of"]),
             job_dir,
+            image_label=self._label_of(param["region_of"]),
         )
+
+    def _label_of(self, name: str) -> str:
+        """The label the person sees for parameter `name` of the current tool."""
+        return next((p["label"] for p in cast(Tool, self.tool)["inputs"] if p["name"] == name), name)
 
     # ---- presentation hints: group headings, advanced settings, enabled_when ----
     def _apply_presentation(self, tool: Tool) -> None:

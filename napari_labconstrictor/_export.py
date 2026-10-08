@@ -13,6 +13,7 @@ if TYPE_CHECKING:  # napari and magicgui ship no usable stubs here: their object
     from napari.layers import Image, Labels, Shapes
 
 MAX_EXPORT_BYTES = 4 * 1024**3  # refuse to write a layer larger than this to a temporary TIFF
+MAX_REGION_OBJECTS = 65_535  # shapes in a RegionOf selection: the labels of the region image are 16 bit (same limit as Fiji and QuPath)
 
 
 def is_set(path: Any) -> bool:
@@ -34,14 +35,15 @@ def _selected_shapes_layer(viewer: Viewer, label: str) -> Shapes:
 
 
 def _region_image_shape(
-    label: str, source: FileEdit | None, image: Image | Labels | None
-) -> tuple[tuple[int, ...], tuple[float, ...] | None]:
-    """(yx shape, yx scale or None) of the image a region belongs to: the chosen file, else the chosen layer."""
+    label: str, image_label: str, source: FileEdit | None, image: Image | Labels | None
+) -> tuple[tuple[int, ...], tuple[float, ...]]:
+    """(yx shape, yx scale) of the open layer a region belongs to. The selection is drawn on a layer, so an image given as a
+    file is refused: nothing says where the selection lies on an unknown file."""
     if source is not None and is_set(source.value):
-        import tifffile
-
-        with tifffile.TiffFile(str(source.value)) as tif:
-            return tif.series[0].shape[-2:], None
+        raise ValueError(
+            "'%s': the selection belongs to an open image, but a file was chosen for '%s': open the image, or untick the selection"
+            % (label, image_label)
+        )
     if image is not None:
         shape = (image.data[0] if getattr(image, "multiscale", False) else image.data).shape[-2:]
         return shape, tuple(image.scale[-2:])
@@ -54,21 +56,28 @@ def selection_mask(
     source: FileEdit | None,
     image: Image | Labels | None,
     job_dir: Path,
+    image_label: str | None = None,
 ) -> str:
     """The shapes of the selected Shapes layer as a label image the size of the image named by `param["region_of"]`
-    (labels 1..N), written to `job_dir`. `source` is that image's "or file" widget (or None), `image` its layer (or None).
-    Anything that makes this impossible is said to the person, never guessed around."""
+    (labels 1..N, at most MAX_REGION_OBJECTS), written to `job_dir`. `source` is that image's "or file" widget (or None),
+    `image` its layer (or None), `image_label` its label for the messages. Anything that makes this impossible is said to the person, never guessed around.
+    """
     from tifffile import imwrite
 
     label = param["label"]
+    shape, scale = _region_image_shape(label, image_label or param["region_of"], source, image)
     layer = _selected_shapes_layer(viewer, label)
-    shape, scale = _region_image_shape(label, source, image)
-    if scale is not None and not np.allclose(layer.scale[-2:], scale):
+    count = len(layer.data)
+    if count > MAX_REGION_OBJECTS:
+        raise ValueError(
+            "'%s': %d objects are selected; at most %d are supported" % (label, count, MAX_REGION_OBJECTS)
+        )
+    if not np.allclose(layer.scale[-2:], scale):
         raise ValueError(
             "'%s': the Shapes layer '%s' has the scale %s but the image has %s; give them the same scale"
             % (label, layer.name, tuple(layer.scale[-2:]), scale)
         )
-    mask = np.asarray(layer.to_labels(labels_shape=tuple(shape)), dtype=np.int32)
+    mask = np.asarray(layer.to_labels(labels_shape=tuple(shape)), dtype=np.uint16)
     if not mask.any():
         raise ValueError("'%s': the shapes of '%s' lie outside the image" % (label, layer.name))
     path = job_dir / (param["name"] + ".tif")
