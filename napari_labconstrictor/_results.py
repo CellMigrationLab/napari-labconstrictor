@@ -217,10 +217,14 @@ class ResultPresenter:
         import json
 
         collection = json.loads(Path(result["path"]).read_text(encoding="utf-8"))
+        features = collection.get("features", [])
+        total = len(
+            features
+        )  # what is counted and capped is the tool's objects (features), not their polygon parts
         polygons: list[np.ndarray] = []
         rows: list[dict[str, Any]] = []
         with_holes = 0
-        for feature in collection.get("features", []):
+        for feature in features[:MAX_SHAPES]:
             geometry = feature["geometry"]
             parts = [geometry["coordinates"]] if geometry["type"] == "Polygon" else geometry["coordinates"]
             for part in parts:
@@ -228,9 +232,6 @@ class ResultPresenter:
                 polygons.append(ring[:, ::-1])  # GeoJSON [x, y] -> Napari (y, x)
                 rows.append(feature.get("properties") or {})
                 with_holes += len(part) > 1
-        total = len(polygons)
-        if total > MAX_SHAPES:
-            polygons, rows = polygons[:MAX_SHAPES], rows[:MAX_SHAPES]
         keys = sorted({k for row in rows for k in row})
         properties = {k: np.array([row.get(k, "") for row in rows]) for k in keys}
         scale = self._frame_scale(result)
@@ -255,7 +256,7 @@ class ResultPresenter:
                 "**%s**: %d outline(s) have holes; the layer draws only the outer boundary."
                 % (result["name"], with_holes)
             )
-        return "outlines '%s' (%d)" % (result["name"], len(polygons))
+        return "outlines '%s' (%d)" % (result["name"], min(total, MAX_SHAPES))
 
     @staticmethod
     def _values(result: Result) -> str:
