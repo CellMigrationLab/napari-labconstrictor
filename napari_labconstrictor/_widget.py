@@ -139,7 +139,7 @@ class LabConstrictorWidget(QWidget):
         self.form_scroll = QScrollArea()
         self.form_scroll.setWidgetResizable(True)
         self.form_scroll.setFrameShape(QFrame.NoFrame)
-        self.form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)  # a form wider than the dock scrolls sideways: nothing is clipped out of reach
         self.form_scroll.setMinimumHeight(180)
         self.form_scroll.setWidget(form_container)
         layout.addWidget(self.form_scroll, 1)
