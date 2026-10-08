@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -55,8 +56,10 @@ class ResultPresenter:
         inputs: dict[Any, Any],  # looked up with .get(None) when a result names no input
         replace: Any = (),
         docks: dict[tuple[str, str], QWidget] | None = None,
+        image_inputs: Sequence[str] = (),
     ) -> None:
         self.viewer, self.app, self.inputs = viewer, app_name, inputs  # inputs: the layers chosen in the form
+        self.image_inputs = tuple(image_inputs)  # names of the image/labels parameters, in the tool's order
         self.replace = set(replace)  # output names whose previous result this run replaces (Replace())
         self.docks = docks if docks is not None else {}  # (app, table name) -> dock widget kept between runs
         self.tables: dict[str, list[list[str]]] = {}
@@ -84,6 +87,16 @@ class ResultPresenter:
                 kind,
                 repr(error) if isinstance(error, KeyError) else error,
             )
+
+    def _frame_scale(self, result: Result) -> tuple[float, float]:
+        """The (y, x) scale of the image a points/shapes result is placed on: the image named by `apply_to`, else the
+        FIRST IMAGE input (PROTOCOL.md), never the first input of some other type. (1, 1) when there is no such image.
+        """
+        name = result.get("apply_to") or next(iter(self.image_inputs), None)
+        source = self.inputs.get(name) if name is not None else None
+        if source is None or not hasattr(source, "scale"):
+            return (1.0, 1.0)
+        return (float(source.scale[-2]), float(source.scale[-1]))
 
     def _layer_name(self, result: Result) -> str:
         return "%s:%s" % (self.app, result["name"])
@@ -182,8 +195,7 @@ class ResultPresenter:
         frame = pd.read_csv(result["path"])
         data = frame[["y", "x"]].to_numpy(dtype=float)
         properties = {c: frame[c].to_numpy() for c in frame.columns[2:]}
-        source = self.inputs.get(result.get("apply_to")) or next(iter(self.inputs.values()), None)
-        scale = tuple(source.scale[-2:]) if source is not None and hasattr(source, "scale") else (1.0, 1.0)
+        scale = self._frame_scale(result)
         name = self._layer_name(result)
         if result["name"] in self.replace and name in self.viewer.layers:
             self.viewer.layers.remove(
@@ -221,8 +233,7 @@ class ResultPresenter:
             polygons, rows = polygons[:MAX_SHAPES], rows[:MAX_SHAPES]
         keys = sorted({k for row in rows for k in row})
         properties = {k: np.array([row.get(k, "") for row in rows]) for k in keys}
-        source = self.inputs.get(result.get("apply_to")) or next(iter(self.inputs.values()), None)
-        scale = tuple(source.scale[-2:]) if source is not None and hasattr(source, "scale") else (1.0, 1.0)
+        scale = self._frame_scale(result)
         name = self._layer_name(result)
         if result["name"] in self.replace and name in self.viewer.layers:
             self.viewer.layers.remove(

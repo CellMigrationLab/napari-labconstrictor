@@ -850,7 +850,10 @@ class LabConstrictorWidget(QWidget):
         }
         replace = {o["name"] for o in self._run_tool["outputs"] if o.get("replace")}
         self.message_label.setVisible(False)
-        self.presenter = ResultPresenter(self.viewer, self._run_app, shown_inputs, replace, self._docks)
+        images = [p["name"] for p in self._run_tool["inputs"] if p["type"] in ("image", "labels")]
+        self.presenter = ResultPresenter(
+            self.viewer, self._run_app, shown_inputs, replace, self._docks, image_inputs=images
+        )
         self._set_running(True)
         self._started = time.perf_counter()
 
