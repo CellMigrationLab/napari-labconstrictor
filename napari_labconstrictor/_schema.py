@@ -95,6 +95,13 @@ def _annotation(param, layer_classes):
     if not is_int:
         # Qt rounds to the step, which must never corrupt calibrations such as 0.325 um/px.
         options["step"] = 1e-4 if param.get("unit") or abs(param.get("default", 1)) < 1 else 0.01
-    if param.get("widget") == "slider" and not param.get("nullable") and "minimum" in param and "maximum" in param:
-        options["widget_type"] = "Slider" if is_int else "FloatSlider"  # the readout box beside it takes a typed value
+    if (
+        param.get("widget") == "slider"
+        and not param.get("nullable")
+        and "minimum" in param
+        and "maximum" in param
+    ):
+        options["widget_type"] = (
+            "Slider" if is_int else "FloatSlider"
+        )  # the readout box beside it takes a typed value
     return (int if is_int else float), options

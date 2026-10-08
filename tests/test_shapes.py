@@ -67,21 +67,38 @@ w.tool_box.value = "Outline the blobs"
 pump(1.0)
 run()
 names = [l.name for l in v.layers]
-expect("labels_and_shapes_layers", names == ["blobs_in", "interactions:blobs", "interactions:outlines"], names)
+expect(
+    "labels_and_shapes_layers", names == ["blobs_in", "interactions:blobs", "interactions:outlines"], names
+)
 shapes = v.layers["interactions:outlines"]
-expect("a_shape_per_blob", len(shapes.data) == 4 and w.last_task.status == "COMPLETE", (len(shapes.data), w.status.text()))
+expect(
+    "a_shape_per_blob",
+    len(shapes.data) == 4 and w.last_task.status == "COMPLETE",
+    (len(shapes.data), w.status.text()),
+)
 expect("polygons", all(t == "polygon" for t in shapes.shape_type), shapes.shape_type)
-expect("properties_kept", set(shapes.properties) >= {"label", "area"} and sorted(int(x) for x in shapes.properties["label"]) == [1, 2, 3, 4], dict(shapes.properties))
+expect(
+    "properties_kept",
+    set(shapes.properties) >= {"label", "area"}
+    and sorted(int(x) for x in shapes.properties["label"]) == [1, 2, 3, 4],
+    dict(shapes.properties),
+)
 expect("scale_follows_the_image", tuple(shapes.scale[-2:]) == (0.5, 0.5), shapes.scale)
 first = np.asarray(shapes.data[0])
-expect("coordinates_are_y_x_around_the_blob", first[:, 0].min() > 3 and first[:, 0].max() < 16 and first[:, 1].min() > 3 and first[:, 1].max() < 16, first.round(1).tolist())
+expect(
+    "coordinates_are_y_x_around_the_blob",
+    first[:, 0].min() > 3 and first[:, 0].max() < 16 and first[:, 1].min() > 3 and first[:, 1].max() < 16,
+    first.round(1).tolist(),
+)
 expect("no_fill", np.allclose(np.asarray(shapes.face_color)[:, 3], 0), shapes.face_color)
 text = w.message_label.text()
 expect("hole_note_in_the_message", "hole" in text and "1 outline" in text and "Outlined" in text, text)
 
 w.gui["threshold"].value = 0.5
 run()
-v.layers["interactions:blobs"].visible = False  # (image and labels results do not take the input scale yet: unrelated to shapes)
+v.layers["interactions:blobs"].visible = (
+    False  # (image and labels results do not take the input scale yet: unrelated to shapes)
+)
 v.reset_view()
 v.layers.selection.active = v.layers["interactions:outlines"]
 pump(0.5)
@@ -99,13 +116,31 @@ from napari_labconstrictor._results import MAX_SHAPES, ResultPresenter
 folder = Path(tempfile.mkdtemp(prefix="lcshapes_"))
 count = MAX_SHAPES + 100
 features = [
-    {"type": "Feature", "properties": {"label": i}, "geometry": {"type": "Polygon", "coordinates": [[[i % 300, i // 300], [i % 300 + 0.5, i // 300], [i % 300, i // 300 + 0.5], [i % 300, i // 300]]]}}
+    {
+        "type": "Feature",
+        "properties": {"label": i},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [i % 300, i // 300],
+                    [i % 300 + 0.5, i // 300],
+                    [i % 300, i // 300 + 0.5],
+                    [i % 300, i // 300],
+                ]
+            ],
+        },
+    }
     for i in range(count)
 ]
 (folder / "many.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": features}))
 presenter = ResultPresenter(v, "big", {}, replace=(), docks={})
 note = presenter.show({"type": "shapes", "name": "many", "path": str(folder / "many.geojson"), "n": count})
-expect("limit_shows_the_first_50000", len(v.layers["big:many"].data) == MAX_SHAPES and "%d" % MAX_SHAPES in " ".join(presenter.messages), (note, presenter.messages))
+expect(
+    "limit_shows_the_first_50000",
+    len(v.layers["big:many"].data) == MAX_SHAPES and "%d" % MAX_SHAPES in " ".join(presenter.messages),
+    (note, presenter.messages),
+)
 
 # an empty result and a broken file are handled, not crashes
 (folder / "empty.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": []}))
@@ -113,7 +148,9 @@ presenter.show({"type": "shapes", "name": "empty", "path": str(folder / "empty.g
 expect("empty_result_is_an_empty_layer", "big:empty" in v.layers and len(v.layers["big:empty"].data) == 0)
 (folder / "broken.geojson").write_text("{not json")
 shown = presenter.show({"type": "shapes", "name": "broken", "path": str(folder / "broken.geojson"), "n": 1})
-expect("broken_file_is_reported", "could not display" in shown.lower() and "big:broken" not in v.layers, shown)
+expect(
+    "broken_file_is_reported", "could not display" in shown.lower() and "big:broken" not in v.layers, shown
+)
 
 print(json.dumps(report, indent=2))
 print("FAILURES:", failures or "none")

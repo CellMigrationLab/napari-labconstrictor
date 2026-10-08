@@ -12,9 +12,11 @@ def is_set(path):
 def _selected_shapes_layer(viewer, label):
     from napari.layers import Shapes
 
-    layer = next((l for l in viewer.layers.selection if isinstance(l, Shapes)), None)
+    layer = next((item for item in viewer.layers.selection if isinstance(item, Shapes)), None)
     if layer is None:
-        raise ValueError("'%s': select a Shapes layer in the layer list, or untick 'use the selection'" % label)
+        raise ValueError(
+            "'%s': select a Shapes layer in the layer list, or untick 'use the selection'" % label
+        )
     if len(layer.data) == 0:
         raise ValueError("'%s': the selected Shapes layer '%s' has no shapes" % (label, layer.name))
     return layer
@@ -65,7 +67,10 @@ def channel_file(path, index, label, target):
     if "C" not in axes:
         return path
     if index >= data.shape[axes.index("C")]:
-        raise ValueError("'%s': channel %d was asked for, but the file has %d" % (label, index + 1, data.shape[axes.index("C")]))
+        raise ValueError(
+            "'%s': channel %d was asked for, but the file has %d"
+            % (label, index + 1, data.shape[axes.index("C")])
+        )
     tifffile.imwrite(target, np.take(data, index, axis=axes.index("C")))
     return target
 

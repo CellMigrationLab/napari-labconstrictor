@@ -13,7 +13,9 @@ from _paths import EVIDENCE
 from qtpy.QtWidgets import QApplication
 
 tools = Path(tempfile.mkdtemp(prefix="lcscroll_"))
-params = "".join("    p%02d: Annotated[float, Group('G%d'), Advanced()] = 1.0,\n" % (i, i // 10) for i in range(40))
+params = "".join(
+    "    p%02d: Annotated[float, Group('G%d'), Advanced()] = 1.0,\n" % (i, i // 10) for i in range(40)
+)
 (tools / "tall_lc_tools.py").write_text(
     "from typing import Annotated\n"
     "from labconstrictor_tools import Advanced, Group, Label, Scalars, tool\n"
@@ -21,7 +23,9 @@ params = "".join("    p%02d: Annotated[float, Group('G%d'), Advanced()] = 1.0,\n
     "def tall(\n    base: float = 1.0,\n" + params + ") -> Scalars:\n    return {'base': base}\n"
     "from typing import Literal\n"
     "@tool('Wide')\n"
-    "def wide(choice: Annotated[Literal['" + "x" * 110 + "', 'y'], Label('A very long label ' * 6)] = 'y') -> Scalars:\n    return {'choice': choice}\n"
+    "def wide(choice: Annotated[Literal['"
+    + "x" * 110
+    + "', 'y'], Label('A very long label ' * 6)] = 'y') -> Scalars:\n    return {'choice': choice}\n"
 )
 subprocess.run(
     [sys.executable, "-m", "labconstrictor_tools", "register", "--name", "tall", "--prefix", sys.prefix,
@@ -54,11 +58,18 @@ pump(0.3)
 w.tool_box.value = "Tall"
 pump(0.8)
 bar = w.form_scroll.verticalScrollBar()
-expect("short_form_does_not_need_scrolling_until_advanced_is_open", bar.maximum() == 0 or bar.maximum() < 200, bar.maximum())
+expect(
+    "short_form_does_not_need_scrolling_until_advanced_is_open",
+    bar.maximum() == 0 or bar.maximum() < 200,
+    bar.maximum(),
+)
 w.advanced_toggle.value = True
 pump(0.8)
 expect("form_scrolls_when_advanced_is_open", bar.maximum() > 200, bar.maximum())
-expect("buttons_stay_in_view", w.details_button.isVisible() and w.cancel_button.isVisible() and w.status.isVisible())
+expect(
+    "buttons_stay_in_view",
+    w.details_button.isVisible() and w.cancel_button.isVisible() and w.status.isVisible(),
+)
 bar.setValue(bar.maximum())
 pump(0.4)
 last = w.gui["p39"]
@@ -70,14 +81,26 @@ v.window._qt_window.resize(700, 700)  # a narrow dock
 w.tool_box.value = "Wide"
 pump(1.0)
 viewport = w.form_scroll.viewport().width()
-expect("precondition_the_form_is_wider_than_the_dock", w.gui.native.minimumSizeHint().width() > viewport, (w.gui.native.minimumSizeHint().width(), viewport))
+expect(
+    "precondition_the_form_is_wider_than_the_dock",
+    w.gui.native.minimumSizeHint().width() > viewport,
+    (w.gui.native.minimumSizeHint().width(), viewport),
+)
 hbar = w.form_scroll.horizontalScrollBar()
-expect("wide_form_has_a_visible_horizontal_scrollbar", hbar.isVisible() and hbar.maximum() > 0, (hbar.isVisible(), hbar.maximum(), w.form_scroll.viewport().width()))
+expect(
+    "wide_form_has_a_visible_horizontal_scrollbar",
+    hbar.isVisible() and hbar.maximum() > 0,
+    (hbar.isVisible(), hbar.maximum(), w.form_scroll.viewport().width()),
+)
 hbar.setValue(hbar.maximum())
 pump(0.4)
 box = w.gui["choice"]
 right = box.native.mapTo(w.form_scroll.viewport(), box.native.rect().topRight()).x()
-expect("right_edge_reachable_by_scrolling", right <= w.form_scroll.viewport().width() + 1, (right, w.form_scroll.viewport().width()))
+expect(
+    "right_edge_reachable_by_scrolling",
+    right <= w.form_scroll.viewport().width() + 1,
+    (right, w.form_scroll.viewport().width()),
+)
 v.screenshot(str(EVIDENCE / "widget_scroll.png"), canvas_only=False)
 print(json.dumps(report, indent=2))
 print("FAILURES:", failures or "none")
