@@ -991,12 +991,13 @@ class LabConstrictorWidget(QWidget):
             text = command.python_snippet(app, self.tool, values)
         else:
             text = command.command_line(app, self.tool, values, python=self.apps[app].get("python", "python"))
-        selected = [n for n, t in self.region_toggles.items() if t.value]
-        if selected:
-            text = (
-                "# %s: the selection cannot be copied; save it as a label image and put its path here\n%s"
-                % (", ".join(selected), text)
-            )
+        notes = self._command_notes()
+        if (
+            notes
+        ):  # as comment lines after the placeholder line (if any), before the command: the order every host uses
+            lines = text.split("\n")
+            head = next((i for i, line in enumerate(lines) if not line.startswith("#")), len(lines))
+            text = "\n".join(lines[:head] + notes + lines[head:])
         clipboard = QApplication.clipboard()
         if (
             clipboard is None
@@ -1010,6 +1011,27 @@ class LabConstrictorWidget(QWidget):
             % ("Python snippet" if kind == "python" else "terminal command")
         )
         return text
+
+    def _command_notes(self) -> list[str]:
+        """One comment line for everything the command cannot say: a selection (not copied) and a chosen channel (the command
+        sends the whole file). Same sentences and order as the other hosts, per parameter in the tool's order.
+        """
+        notes = []
+        for param in cast(Tool, self.tool)["inputs"]:
+            name = param["name"]
+            toggle = self.region_toggles.get(name)
+            if toggle is not None and toggle.value:
+                notes.append(
+                    "# %s: the selection cannot be copied; save it as a label image and put its path here"
+                    % name
+                )
+                continue
+            picked = self._picked_channel(name)
+            if picked is not None:
+                notes.append(
+                    "# %s: napari sent only channel %d; the command sends the whole file" % (name, picked + 1)
+                )
+        return notes
 
     def _picked_channel(self, name: str) -> int | None:
         """The index of the channel the person chose for image parameter `name`, or None when there is nothing to choose."""
