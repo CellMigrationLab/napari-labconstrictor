@@ -48,10 +48,10 @@ jobs:
       - name: Tests (Windows/macOS)
         if: runner.os != 'Linux'
         shell: bash
-        env:
-          QT_OPENGL: ${{ runner.os == 'macOS' && 'software' || '' }}
         working-directory: tests
         run: |
+          # macOS: Qt software rendering; Windows: QT_OPENGL=desktop was exported by the Mesa step (empty values are invalid)
+          if [ "$RUNNER_OS" = "macOS" ]; then export QT_OPENGL=software; fi
           python test_units.py
           python test_widget.py
           python test_file_sources.py
