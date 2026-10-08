@@ -43,6 +43,22 @@ def _tool_names(schema):
     ]
 
 
+def _failure_line(first_line):
+    return "✖ %s  - click Details… for the full report (log: %s)" % (first_line, log.log_path())
+
+
+def _unfinished_text(task):
+    """The status line for a task that did not complete (failed, cancelled or crashed)."""
+    first_line = (task.error or "").splitlines()[0] if task.error else task.status
+    if task.status == "FAILED" and getattr(task, "code", None) in _NO_RESULT_CODES:
+        return "⚠ " + first_line.split("] ", 1)[-1]
+    if task.status == "CRASHED" and getattr(task, "cancel_requested", False):
+        return "cancelled (worker stopped)"
+    if task.status == "CRASHED" or task.status not in _FINISH_TEXT:
+        return _failure_line(first_line)
+    return _FINISH_TEXT[task.status]
+
+
 class _Signals(QObject):
     progress = Signal(object, object)
     done = Signal(object)
@@ -53,6 +69,23 @@ class LabConstrictorWidget(QWidget):
     def __init__(self, napari_viewer=None):
         super().__init__()
         self.viewer = napari_viewer
+        self._init_state()
+        self._workers = WorkerCache()
+        self._signals = _Signals()
+        self._signals.progress.connect(self._on_progress)
+        self._signals.done.connect(self._on_done)
+        self._signals.choices.connect(self._on_choices)
+        self._choice_timer = QTimer(self)
+        self._choice_timer.setSingleShot(True)
+        self._choice_timer.timeout.connect(self._resolve_choices)
+        self._build_layout()
+        if self.viewer is not None:
+            # Layer choosers must follow the layer list even if this widget was built before it was docked.
+            self.viewer.layers.events.inserted.connect(self._refresh_layer_choices)
+            self.viewer.layers.events.removed.connect(self._refresh_layer_choices)
+        self.rescan()
+
+    def _init_state(self):
         self.apps, self.schemas = {}, {}
         self.gui = None  # the magicgui form of the current tool
         self.file_sources = {}  # image parameter -> "or file" widget
@@ -72,28 +105,26 @@ class LabConstrictorWidget(QWidget):
             None  # what the running task was started with (the choosers may change meanwhile)
         )
         self.timings = {}
-        self._workers = WorkerCache()
-        self._signals = _Signals()
-        self._signals.progress.connect(self._on_progress)
-        self._signals.done.connect(self._on_done)
-        self._signals.choices.connect(self._on_choices)
         self._choice_problems = {}  # (request number, parameter) -> why the choices could not be fetched
         self._choice_boxes = {}  # ChoicesFrom parameter -> its dropdown
         self._choice_seq = {}  # parameter -> number of the newest question; older answers are dropped
-        self._choice_timer = QTimer(self)
-        self._choice_timer.setSingleShot(True)
-        self._choice_timer.timeout.connect(self._resolve_choices)
         self._docks = {}  # (app, table name) -> dock widget, so that Replace can swap it
         self._group_members = {}  # collapsible group -> widgets
-        self._build_layout()
-        if self.viewer is not None:
-            # Layer choosers must follow the layer list even if this widget was built before it was docked.
-            self.viewer.layers.events.inserted.connect(self._refresh_layer_choices)
-            self.viewer.layers.events.removed.connect(self._refresh_layer_choices)
-        self.rescan()
 
     # ---- layout -------------------------------------------------------
     def _build_layout(self):
+        self._create_controls()
+        layout = QVBoxLayout(self)
+        for widget in (self.app_box.native, self.tool_box.native, self.description):
+            layout.addWidget(widget)
+        layout.addWidget(self._build_form_area(), 1)
+        layout.addWidget(self.bar)
+        layout.addWidget(self._build_outcome_area(), 1)
+        layout.addWidget(self.reuse_box)
+        layout.addLayout(self._button_row())
+        self._connect_controls()
+
+    def _create_controls(self):
         self.app_box = mw.ComboBox(label="Application")
         self.tool_box = mw.ComboBox(label="Tool")
         self.description = QLabel("")
@@ -124,17 +155,16 @@ class LabConstrictorWidget(QWidget):
         copy_menu.addAction("Terminal command").triggered.connect(lambda *_: self.copy_as_command("terminal"))
         copy_menu.addAction("Python snippet").triggered.connect(lambda *_: self.copy_as_command("python"))
         self.copy_button.setMenu(copy_menu)
+
+    def _button_row(self):
         buttons = QHBoxLayout()
-        buttons.addWidget(self.cancel_button)
-        buttons.addWidget(self.rescan_button)
-        buttons.addWidget(self.restart_button)
-        buttons.addWidget(self.details_button)
-        buttons.addWidget(self.copy_button)
-        layout = QVBoxLayout(self)
-        for widget in (self.app_box.native, self.tool_box.native, self.description):
-            layout.addWidget(widget)
-        # The form can be taller than the dock (advanced settings of a big tool): it scrolls, while the progress bar, status and
-        # buttons below stay in view.
+        for button in (self.cancel_button, self.rescan_button, self.restart_button, self.details_button, self.copy_button):
+            buttons.addWidget(button)
+        return buttons
+
+    def _build_form_area(self):
+        """The form can be taller than the dock (advanced settings of a big tool): it scrolls, while the progress bar, status and
+        buttons below stay in view."""
         form_container = QWidget()
         form_container.setLayout(self.form_holder)
         self.form_holder.setContentsMargins(0, 0, 0, 0)
@@ -145,9 +175,11 @@ class LabConstrictorWidget(QWidget):
         self.form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)  # a form wider than the dock scrolls sideways: nothing is clipped out of reach
         self.form_scroll.setMinimumHeight(180)
         self.form_scroll.setWidget(form_container)
-        layout.addWidget(self.form_scroll, 1)
-        layout.addWidget(self.bar)
-        # Status and message can be long (a readout, many values): they scroll in a box of limited height, so they never squeeze the form.
+        return self.form_scroll
+
+    def _build_outcome_area(self):
+        """Status and message can be long (a readout, many values): they scroll in a box of limited height, so they never
+        squeeze the form."""
         outcome = QWidget()
         outcome_layout = QVBoxLayout(outcome)
         outcome_layout.setContentsMargins(0, 0, 0, 0)
@@ -161,9 +193,9 @@ class LabConstrictorWidget(QWidget):
         self.outcome_scroll.setMaximumHeight(320)
         self.outcome_scroll.setMinimumHeight(110)
         self.outcome_scroll.setWidget(outcome)
-        layout.addWidget(self.outcome_scroll, 1)
-        layout.addWidget(self.reuse_box)
-        layout.addLayout(buttons)
+        return self.outcome_scroll
+
+    def _connect_controls(self):
         self.cancel_button.clicked.connect(self.cancel)
         self.details_button.clicked.connect(self._show_details)
         self.rescan_button.clicked.connect(self.rescan)
@@ -403,32 +435,7 @@ class LabConstrictorWidget(QWidget):
             ]
             for p in inputs
         }
-        advanced_widgets, previous_group = [], None
-        for p in inputs:
-            first = self._members[p["name"]][0]
-            if p.get("advanced") and self.advanced_toggle is None:
-                self.advanced_toggle = mw.CheckBox(
-                    value=False, text="Show advanced settings", label="", gui_only=True
-                )
-                self.gui.insert(list(self.gui).index(first), self.advanced_toggle)
-                self.advanced_toggle.changed.connect(
-                    lambda shown: [setattr(w, "visible", bool(shown)) for w in advanced_widgets]
-                )
-            group = p.get("group")
-            if group and group != previous_group:
-                if p.get("group_collapsed"):
-                    heading = self._accordion_heading(group)
-                else:
-                    heading = mw.Label(value=group, label="")
-                    heading.native.setStyleSheet("font-weight: bold; padding-top: 6px;")
-                self.gui.insert(list(self.gui).index(first), heading)
-                if p.get("advanced"):
-                    advanced_widgets.append(heading)
-            previous_group = group or previous_group
-            if p.get("group_collapsed") and group:
-                self._group_members.setdefault(group, []).extend(self._members[p["name"]])
-            if p.get("advanced"):
-                advanced_widgets.extend(self._members[p["name"]])
+        advanced_widgets = self._insert_headings(inputs)
         for widget in advanced_widgets:
             widget.visible = False
         for group, widgets in self._group_members.items():  # accordion sections start folded
@@ -439,6 +446,40 @@ class LabConstrictorWidget(QWidget):
                 controller = self.gui[rule["param"]]
                 controller.changed.connect(lambda *_: self._refresh_enabled())
         self._refresh_enabled()
+
+    def _insert_headings(self, inputs):
+        """Put the group headings (and the 'Show advanced settings' box) into the form; returns the advanced widgets."""
+        advanced_widgets, previous_group = [], None
+        for p in inputs:
+            first = self._members[p["name"]][0]
+            if p.get("advanced") and self.advanced_toggle is None:
+                self._add_advanced_toggle(first, advanced_widgets)
+            group = p.get("group")
+            if group and group != previous_group:
+                heading = self._group_heading_widget(group, p.get("group_collapsed"))
+                self.gui.insert(list(self.gui).index(first), heading)
+                if p.get("advanced"):
+                    advanced_widgets.append(heading)
+            previous_group = group or previous_group
+            if p.get("group_collapsed") and group:
+                self._group_members.setdefault(group, []).extend(self._members[p["name"]])
+            if p.get("advanced"):
+                advanced_widgets.extend(self._members[p["name"]])
+        return advanced_widgets
+
+    def _add_advanced_toggle(self, first, advanced_widgets):
+        self.advanced_toggle = mw.CheckBox(value=False, text="Show advanced settings", label="", gui_only=True)
+        self.gui.insert(list(self.gui).index(first), self.advanced_toggle)
+        self.advanced_toggle.changed.connect(
+            lambda shown: [setattr(w, "visible", bool(shown)) for w in advanced_widgets]
+        )
+
+    def _group_heading_widget(self, group, collapsed):
+        if collapsed:
+            return self._accordion_heading(group)
+        heading = mw.Label(value=group, label="")
+        heading.native.setStyleSheet("font-weight: bold; padding-top: 6px;")
+        return heading
 
     # ---- accordion groups (Collapsed) ----
     def _accordion_heading(self, group):
@@ -625,41 +666,40 @@ class LabConstrictorWidget(QWidget):
         """Pixel-size field follows the layer chosen for its image - until the user edits it."""
         image, pixel = self.gui[image_name], self.gui[pixel_name]
         auto_value = [pixel.value]
-
         file_edit = self.file_sources.get(image_name)
 
         def sync(*_):
             if pixel.value != auto_value[0]:
                 return
-            if file_edit is not None and _is_set(file_edit.value):  # calibration stored in the file
-                yx, problem = microns_yx_from_tiff_checked(file_edit.value)
-                if problem:
-                    self.status.setText("⚠ %s" % problem)
-                if yx is not None:
-                    auto_value[0] = pixel.value = yx[1]
-                    note = anisotropy_note(yx)
-                    if note:
-                        self.status.setText(note)
-                return
-            layer = image.value
-            if layer is None:
-                return
-            yx, assumed = microns_per_pixel_yx(layer)
+            yx = self._detect_calibration(image, file_edit)
             if yx is not None:
                 auto_value[0] = pixel.value = yx[1]
-                self.status.setText(
-                    anisotropy_note(yx)
-                    or (
-                        "calibration assumed to be in µm (layer has no unit)"
-                        if assumed
-                        else self.status.text()
-                    )
-                )
 
         image.changed.connect(sync)
         if file_edit is not None:
             file_edit.changed.connect(sync)
         sync()
+
+    def _detect_calibration(self, image, file_edit):
+        """(y, x) micrometres per pixel of the chosen file, else of the chosen layer, or None; what it found goes to the status line."""
+        if file_edit is not None and _is_set(file_edit.value):  # calibration stored in the file
+            yx, problem = microns_yx_from_tiff_checked(file_edit.value)
+            if problem:
+                self.status.setText("⚠ %s" % problem)
+            note = anisotropy_note(yx) if yx is not None else None
+            if note:
+                self.status.setText(note)
+            return yx
+        layer = image.value
+        if layer is None:
+            return None
+        yx, assumed = microns_per_pixel_yx(layer)
+        if yx is not None:
+            self.status.setText(
+                anisotropy_note(yx)
+                or ("calibration assumed to be in µm (layer has no unit)" if assumed else self.status.text())
+            )
+        return yx
 
     # ---- run ----------------------------------------------------------
     def _launch(self, form_values):
@@ -668,19 +708,29 @@ class LabConstrictorWidget(QWidget):
         ):  # a run is in progress: never start a second one
             return
         job_dir = Path(tempfile.mkdtemp(prefix="lcin_"))
+        inputs = self._prepare_inputs(form_values, job_dir)
+        if inputs is None:
+            return
+        self._begin_run(form_values, inputs, job_dir)
+        self._start_worker(inputs, job_dir)
+
+    def _prepare_inputs(self, form_values, job_dir):
+        """The worker inputs, or None after telling the person why they could not be made (the job dir is removed then)."""
         try:
-            inputs = self._export_inputs(form_values, job_dir)
+            return self._export_inputs(form_values, job_dir)
         except ValueError as error:  # something the user can fix: say it plainly
             shutil.rmtree(job_dir, ignore_errors=True)
             self.status.setText("⚠ %s" % error)
-            return
         except (
             Exception
         ) as error:  # noqa: BLE001 - e.g. the disk is full while saving a layer: clean up, say so, log it
             log.error("napari: cannot prepare the inputs for %s", self.app_box.value, exc_info=True)
             shutil.rmtree(job_dir, ignore_errors=True)
             self._show_failure("could not prepare the inputs: %s" % error, error)
-            return
+        return None
+
+    def _begin_run(self, form_values, inputs, job_dir):
+        """Remember what this run was started with and get the result presenter and the running state ready."""
         inputs[JOB_DIR_KEY] = str(
             job_dir / "out"
         )  # host-owned: removed by the host whatever happens to the worker
@@ -696,6 +746,8 @@ class LabConstrictorWidget(QWidget):
         self.presenter = ResultPresenter(self.viewer, self._run_app, shown_inputs, replace, self._docks)
         self._set_running(True)
         self._started = time.perf_counter()
+
+    def _start_worker(self, inputs, job_dir):
         worker = None
         try:
             worker = self._workers.acquire(self._run_app, reuse=self.reuse_box.isChecked())
@@ -878,32 +930,31 @@ class LabConstrictorWidget(QWidget):
         self._workers.release(self._run_app, self.worker, keep=self.reuse_box.isChecked() and healthy)
         if task.status != "COMPLETE":
             shutil.rmtree(self._job_dir, ignore_errors=True)
-            first_line = (task.error or "").splitlines()[0] if task.error else task.status
-            if task.status == "FAILED" and getattr(task, "code", None) in _NO_RESULT_CODES:
-                text = "⚠ " + first_line.split("] ", 1)[-1]
-            elif task.status == "CRASHED" and getattr(task, "cancel_requested", False):
-                text = "cancelled (worker stopped)"
-            elif task.status == "CRASHED":
-                text = "✖ %s  - click Details… for the full report (log: %s)" % (first_line, log.log_path())
-            else:
-                text = _FINISH_TEXT.get(
-                    task.status,
-                    "✖ %s  - click Details… for the full report (log: %s)" % (first_line, log.log_path()),
-                )
-            self.status.setText(text)
+            self.status.setText(_unfinished_text(task))
             return
+        summaries = self._show_results(task)
+        if summaries is None:
+            return
+        self._report_success(summaries)
+        self._clear_after_run()
+        self._schedule_choices(200)  # a run may have changed what the source tool answers (e.g. a game was prepared)
+
+    def _show_results(self, task):
+        """Show every result of a finished task: the summaries, or None after reporting that they could not be shown."""
         try:
-            summaries = [self.presenter.show(result) for result in task.outputs["results"]]
+            return [self.presenter.show(result) for result in task.outputs["results"]]
         except Exception as error:  # noqa: BLE001 - some results may already be shown: do not claim success
             log.error("napari: could not show the results of %s", self._run_tool["id"], exc_info=True)
             self._show_failure(
                 "the tool finished but its results could not be shown completely: %s" % error, error
             )
-            return
+            return None
         finally:
             shutil.rmtree(
                 self._job_dir, ignore_errors=True
             )  # inputs and outputs share the job dir; results are in the viewer
+
+    def _report_success(self, summaries):
         if self.presenter.messages:
             self.message_label.setText("\n\n".join(self.presenter.messages))
             self.message_label.setVisible(True)
@@ -917,8 +968,6 @@ class LabConstrictorWidget(QWidget):
             self.last_details += "\n\nnot shown:\n" + "\n".join(failed)
         else:
             self.status.setText("✔ done in %.1fs  %s" % (self.timings["run_wall_s"], text))
-        self._clear_after_run()
-        self._schedule_choices(200)  # a run may have changed what the source tool answers (e.g. a game was prepared)
 
     def _clear_after_run(self):
         """ClearAfterRun parameters go back to their default (or unset) once a run has succeeded."""
