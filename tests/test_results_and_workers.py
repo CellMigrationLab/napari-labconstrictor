@@ -102,6 +102,22 @@ class Presenter(unittest.TestCase):
         self.assertEqual(self.presenter.show({"type": "image", "name": "ok", "path": str(path)}), "")
         self.assertEqual(self.shown, [("image", (64, 64))])
 
+    def test_a_table_dock_the_user_closed_is_logged_and_replaced(self):
+        path = self.dir / "r.csv"
+        path.write_text("a\n1\n")
+        presenter = _results.ResultPresenter(self.presenter.viewer, "app", {}, {"r"}, {})
+
+        def gone(widget):
+            raise LookupError("Could not find a dock widget")
+
+        presenter.viewer.window.remove_dock_widget = gone
+        presenter.show({"type": "table", "name": "r", "path": str(path)})  # first: nothing to replace
+        with mock.patch.object(_results.log, "warning") as warn:
+            text = presenter.show({"type": "table", "name": "r", "path": str(path)})
+        warn.assert_called_once()
+        self.assertEqual(text, "table 'r' (1 rows)")
+        self.assertEqual(self.shown.count(("dock", 1)), 2)
+
     def test_a_huge_table_shows_a_bounded_number_of_rows_and_says_so(self):
         path = self.dir / "t.csv"
         path.write_text("a,b\n" + "".join("%d,%d\n" % (i, i) for i in range(10)))

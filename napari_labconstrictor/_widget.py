@@ -4,6 +4,7 @@ registry (cached JSON) -> app/tool choosers -> schema -> synthesized signature -
 """
 
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -19,7 +20,12 @@ from qtpy.QtWidgets import QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel,
 
 from ._results import COULD_NOT_DISPLAY, FileInput, ResultPresenter
 from ._schema import presentation_order, rule_satisfied, signature_from_schema
-from ._units import anisotropy_note, microns_per_pixel_yx, microns_yx_from_tiff
+from ._units import (
+    TIFF_READ_ERRORS,
+    anisotropy_note,
+    microns_per_pixel_yx,
+    microns_yx_from_tiff_checked,
+)
 from ._workers import WorkerCache
 
 MAX_EXPORT_BYTES = 4 * 1024**3  # refuse to write a layer larger than this to a temporary TIFF
@@ -75,6 +81,7 @@ class LabConstrictorWidget(QWidget):
         self._signals.progress.connect(self._on_progress)
         self._signals.done.connect(self._on_done)
         self._signals.choices.connect(self._on_choices)
+        self._choice_problems = {}  # (request number, parameter) -> why the choices could not be fetched
         self._choice_boxes = {}  # ChoicesFrom parameter -> its dropdown
         self._choice_seq = {}  # parameter -> number of the newest question; older answers are dropped
         self._choice_timer = QTimer(self)
@@ -302,15 +309,18 @@ class LabConstrictorWidget(QWidget):
         """The channels of what is chosen for image parameter `name`: names, or [] when the image is a single channel."""
         source = self.file_sources.get(name)
         if source is not None and _is_set(source.value):
-            try:
-                import tifffile
+            import tifffile
 
+            try:
                 with tifffile.TiffFile(str(source.value)) as tif:
                     series = tif.series[0]
                     if "C" in series.axes:
                         return ["Channel %d" % (i + 1) for i in range(series.shape[series.axes.index("C")])]
-            except Exception:  # noqa: BLE001 - an unreadable file is reported when the run starts
-                pass
+            except (*TIFF_READ_ERRORS, tifffile.TiffFileError) as error:  # unreadable: no channels to choose from
+                log.warning(
+                    "napari: cannot read the channels of %s (%s: %s)", source.value, type(error).__name__, error
+                )
+                self.status.setText("⚠ could not read the channels of %s: %s" % (source.value, error))
             return []
         layer = self.gui[name].value
         if layer is not None and getattr(layer, "rgb", False):
@@ -563,8 +573,17 @@ class LabConstrictorWidget(QWidget):
                     if isinstance(values.get(src["field"]), list):
                         options = [str(v) for v in values[src["field"]]]
                         break
-        except Exception:  # noqa: BLE001 - never blocks the form: the text field remains
+            if options is None:  # intended fallback (the text field stays), but never a silent one
+                log.warning(
+                    "napari: %s gave no list for %r (status %s); using a text field",
+                    src.get("tool"),
+                    src["field"],
+                    task.status,
+                )
+                self._choice_problems[(number, name)] = "%s gave no choices for %s" % (src.get("tool"), name)
+        except Exception:  # noqa: BLE001 - broad on purpose (isolation boundary): any worker failure must leave the text field usable
             log.error("napari: could not ask %s for choices", src.get("tool"), exc_info=True)
+            self._choice_problems[(number, name)] = "could not get the choices for %s (see the log)" % name
         finally:
             if worker is not None:
                 self._workers.release(app, worker, keep=worker.alive)
@@ -580,6 +599,14 @@ class LabConstrictorWidget(QWidget):
         if not options:
             box.visible = False
             field.visible = True
+            problem = self._choice_problems.pop(key, None)
+            if problem:  # the text field stays, and the person is told why there is no list
+                text = "%s: type the value" % problem
+                tip = field.native.toolTip()
+                if text not in tip:
+                    field.native.setToolTip((tip + "\n" if tip else "") + text)
+                if not self.status.text():  # never overwrite the outcome of a run with a side question
+                    self.status.setText("⚠ " + text)
             return
         current = field.value or ""
         param = next((p for p in self.tool["inputs"] if p["name"] == name), {})
@@ -639,7 +666,9 @@ class LabConstrictorWidget(QWidget):
             if pixel.value != auto_value[0]:
                 return
             if file_edit is not None and _is_set(file_edit.value):  # calibration stored in the file
-                yx = microns_yx_from_tiff(file_edit.value)
+                yx, problem = microns_yx_from_tiff_checked(file_edit.value)
+                if problem:
+                    self.status.setText("⚠ %s" % problem)
                 if yx is not None:
                     auto_value[0] = pixel.value = yx[1]
                     note = anisotropy_note(yx)
@@ -1007,7 +1036,7 @@ class LabConstrictorWidget(QWidget):
         ):  # closed during a run: stop it, do not leave worker or temp files
             try:
                 self.worker.kill()
-            except Exception:  # noqa: BLE001 - best effort while closing, but leave a trace
+            except (OSError, subprocess.SubprocessError):  # best effort while closing: already gone / cannot be signalled
                 log.error("napari: could not stop the worker while closing the widget", exc_info=True)
             shutil.rmtree(getattr(self, "_job_dir", ""), ignore_errors=True)
         self._workers.close_all()
