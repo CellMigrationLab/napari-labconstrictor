@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -17,6 +18,7 @@ from labconstrictor_tools import log, registry, runs
 from labconstrictor_tools.protocol import JOB_DIR_KEY
 from magicgui import magicgui
 from magicgui import widgets as mw
+from magicgui.types import FileDialogMode
 from qtpy.QtCore import QObject, Qt, QTimer, Signal
 from qtpy.QtWidgets import (
     QApplication,
@@ -188,8 +190,8 @@ class LabConstrictorWidget(QWidget):
             ""
         )  # message results of the last run (markdown); hidden when there is none
         self.message_label.setWordWrap(True)
-        self.message_label.setTextFormat(Qt.MarkdownText)
-        self.message_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.message_label.setTextFormat(Qt.TextFormat.MarkdownText)
+        self.message_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.message_label.setStyleSheet("QLabel { border-left: 3px solid #5a9fd4; padding: 4px 8px; }")
         self.message_label.setVisible(False)
         self.cancel_button = QPushButton("Cancel")
@@ -206,9 +208,20 @@ class LabConstrictorWidget(QWidget):
             "Copy what repeats this run outside Napari: a terminal line or a Python snippet"
         )
         copy_menu = QMenu(self.copy_button)
-        copy_menu.addAction("Terminal command").triggered.connect(lambda *_: self.copy_as_command("terminal"))
-        copy_menu.addAction("Python snippet").triggered.connect(lambda *_: self.copy_as_command("python"))
+        for label, kind in (("Terminal command", "terminal"), ("Python snippet", "python")):
+            action = copy_menu.addAction(label)
+            if action is None:  # Qt's stubs allow it; addAction(str) never returns None in practice
+                raise RuntimeError("Qt could not create the menu entry %r" % label)
+            action.triggered.connect(self._copy_handler(kind))
         self.copy_button.setMenu(copy_menu)
+
+    def _copy_handler(self, kind: str) -> Callable[..., None]:
+        """A menu-entry slot that copies as `kind` (a slot returns nothing; the copied text is for tests/callers)."""
+
+        def copy(*_: object) -> None:
+            self.copy_as_command(kind)
+
+        return copy
 
     def _button_row(self) -> QHBoxLayout:
         buttons = QHBoxLayout()
@@ -233,7 +246,7 @@ class LabConstrictorWidget(QWidget):
         self.form_scroll.setWidgetResizable(True)
         self.form_scroll.setFrameShape(QFrame.NoFrame)
         self.form_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarAsNeeded
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )  # a form wider than the dock scrolls sideways: nothing is clipped out of reach
         self.form_scroll.setMinimumHeight(FORM_MIN_HEIGHT_PX)
         self.form_scroll.setWidget(form_container)
@@ -251,7 +264,7 @@ class LabConstrictorWidget(QWidget):
         self.outcome_scroll = QScrollArea()
         self.outcome_scroll.setWidgetResizable(True)
         self.outcome_scroll.setFrameShape(QFrame.NoFrame)
-        self.outcome_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.outcome_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.outcome_scroll.setMaximumHeight(OUTCOME_MAX_HEIGHT_PX)
         self.outcome_scroll.setMinimumHeight(OUTCOME_MIN_HEIGHT_PX)
         self.outcome_scroll.setWidget(outcome)
@@ -365,7 +378,7 @@ class LabConstrictorWidget(QWidget):
                 continue
             layer_widget = self.gui[param["name"]]
             edit = mw.FileEdit(
-                mode="r",
+                mode=FileDialogMode.EXISTING_FILE,  # "r"
                 nullable=True,
                 label="  or file",
                 tooltip="Read the image from a file instead of a layer (leave empty to use the layer above)",
@@ -855,7 +868,12 @@ class LabConstrictorWidget(QWidget):
                 on_update=lambda message, fraction: self._signals.progress.emit(message, fraction),
             )
             self.task = task
-            threading.Thread(target=lambda: (task.wait(), self._signals.done.emit(task)), daemon=True).start()
+
+            def wait_then_signal() -> None:
+                task.wait()
+                self._signals.done.emit(task)
+
+            threading.Thread(target=wait_then_signal, daemon=True).start()
         # BLE001: e.g. the app's Python is gone or the worker died at once - undo the start
         except Exception as error:  # noqa: BLE001
             log.error("napari: cannot start %s for %s", self._run_tool["id"], self._run_app, exc_info=True)
@@ -970,7 +988,14 @@ class LabConstrictorWidget(QWidget):
                 "# %s: the selection cannot be copied; save it as a label image and put its path here\n%s"
                 % (", ".join(selected), text)
             )
-        QApplication.clipboard().setText(text)
+        clipboard = QApplication.clipboard()
+        if (
+            clipboard is None
+        ):  # no clipboard (no QApplication/display): say so instead of reporting a copy that did not happen
+            log.error("napari: no clipboard to copy the %s to", kind)
+            self.status.setText(_failure_line("there is no clipboard to copy to"))
+            return None
+        clipboard.setText(text)
         self.status.setText(
             "✔ copied the %s to the clipboard"
             % ("Python snippet" if kind == "python" else "terminal command")
