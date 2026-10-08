@@ -8,7 +8,7 @@ import time
 from labconstrictor_tools import client
 
 IDLE_SECONDS = 600  # an unused worker (and the memory its imports hold) is closed after this long
-CLOSE_TIMEOUT_S = 2  # how long a worker gets to exit politely when closed, before it is killed
+CLOSE_TIMEOUT_S = 10  # how long a worker gets to exit politely when closed, before it is killed (PROTOCOL.md: the worker exits within 10 s)
 
 
 class WorkerCache:
