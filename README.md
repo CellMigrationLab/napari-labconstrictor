@@ -1,6 +1,6 @@
 # LabConstrictor for Napari
 
-**Run analysis from installed LabConstrictor applications without leaving Napari.**
+**Run registered Python analysis tools from Napari.**
 
 Choose an image layer, select an analysis tool and run it. Results come back as Napari layers, tables or messages. The analysis itself runs in the application's own Python environment, so you do not need to install its scientific dependencies into Napari.
 
@@ -8,9 +8,9 @@ The plugin provides **one dock widget for all registered LabConstrictor applicat
 
 ![LabConstrictor tools dock widget](docs/screenshot.png)
 
-## Try it with a built-in image
+## First run: Playground
 
-The [LabConstrictor Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground) is a useful first application. Install it, open the LabConstrictor widget and select **Feature tour**.
+Install [LabConstrictor Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground) to test the widget without scientific data. Install it, open the LabConstrictor widget and select **Feature tour**.
 
 You can leave its image input unset: the tool makes a small demonstration image with blobs and rings. It returns a label image, outlines, points, a measurements table and a summary. Try changing the threshold to see how a second run updates results marked for replacement.
 
@@ -32,7 +32,7 @@ The widget supports the controls a tool declares: numbers with ranges and units,
 - **Pick a channel:** a tool with `PickChannel()` can receive a selected channel from an RGB layer or a multichannel file.
 - **Use physical units:** pixel-size inputs can follow a layer's scale or a TIFF's metadata. Check calibration before relying on measurements.
 
-## What happens to results?
+## Results
 
 | Tool result | In Napari |
 |---|---|
@@ -67,7 +67,7 @@ labconstrictor-tools doctor
 
 The widget reads cached tool descriptions, then runs each tool through the Toolkit worker in that application's own interpreter.
 
-## Reproduce and troubleshoot a run
+## Reproduce a run and diagnose failures
 
 The widget can copy the last run as a terminal command or Python snippet. When an input came from an unsaved layer, save the data before expecting that command to reproduce the run from disk.
 
