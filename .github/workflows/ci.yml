@@ -37,10 +37,9 @@ jobs:
         working-directory: tests
         run: |
           python test_units.py
-          python test_file_sources.py
-          # test_widget.py opens a napari viewer: on the Windows runner (no GPU) vispy fails with a GL "invalid operation",
-          # so the viewer test runs on Linux (Xvfb) and macOS only until a software GL is set up for Windows
-          if [ "$RUNNER_OS" != "Windows" ]; then python test_widget.py; fi
+          # test_widget.py and test_file_sources.py open a napari viewer: on the Windows runner (no GPU) vispy fails with
+          # a GL "invalid operation", so they run on Linux (Xvfb) and macOS only until a software GL is set up for Windows
+          if [ "$RUNNER_OS" != "Windows" ]; then python test_widget.py; python test_file_sources.py; fi
   lint:
     runs-on: ubuntu-latest
     steps:
