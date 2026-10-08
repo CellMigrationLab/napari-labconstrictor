@@ -107,12 +107,13 @@ def microns_yx_from_tiff_checked(path: str | Path) -> tuple[tuple[float, float] 
                 .replace("\u03bc", "u")
             )
             if unit in _MICRONS_PER_UNIT:
-                factor = _MICRONS_PER_UNIT[unit]
+                factor: float = _MICRONS_PER_UNIT[unit]
             else:
                 code = tags["ResolutionUnit"].value if "ResolutionUnit" in tags else 2
-                factor = _RESOLUTION_UNIT_MICRONS.get(int(code))
-                if not factor or unit:
+                resolution_factor = _RESOLUTION_UNIT_MICRONS.get(int(code))
+                if not resolution_factor or unit:
                     return None, None
+                factor = resolution_factor
             return (y * factor, x * factor), None
     except (
         *TIFF_READ_ERRORS,

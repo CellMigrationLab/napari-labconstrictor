@@ -52,7 +52,7 @@ class ResultPresenter:
         self,
         viewer: Viewer,
         app_name: str,
-        inputs: dict[str, Any],
+        inputs: dict[Any, Any],  # looked up with .get(None) when a result names no input
         replace: Any = (),
         docks: dict[tuple[str, str], QWidget] | None = None,
     ) -> None:

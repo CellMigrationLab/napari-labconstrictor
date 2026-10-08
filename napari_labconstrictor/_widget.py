@@ -11,7 +11,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from labconstrictor_tools import log, registry, runs
 from labconstrictor_tools.protocol import JOB_DIR_KEY
@@ -93,6 +93,10 @@ class _Signals(QObject):
     choices = Signal(object, object)  # (request number, list of options or None)
 
 
+# `cast(Tool, ...)` below: `tool` is None only before a tool is chosen, and these methods run only from a built form;
+# the cast is a no-op at run time (the behaviour on None is unchanged).
+
+
 class LabConstrictorWidget(QWidget):
     """The one dock widget: owns the form of the chosen tool and the state of the run in progress (task, worker, job folder).
 
@@ -119,30 +123,43 @@ class LabConstrictorWidget(QWidget):
         self.rescan()
 
     def _init_state(self) -> None:
-        self.apps, self.schemas = {}, {}
-        self.gui = None  # the magicgui form of the current tool
-        self.file_sources = {}  # image parameter -> "or file" widget
-        self.unset_toggles = {}  # nullable parameter -> "set" checkbox
-        self.region_toggles = {}  # RegionOf parameter -> "use the selection" checkbox
-        self.channel_boxes = {}  # PickChannel image parameter -> its channel chooser
-        self.advanced_toggle = (
+        # `Any` below: magicgui/Qt widgets and the Task/WorkerProcess objects of labconstrictor_tools have no stubs, and
+        # the run-state attributes are None until a run starts (then set together by _begin_run / _start_worker)
+        self.apps: dict[str, Any] = {}
+        self.schemas: dict[str, Any] = {}
+        self.gui: Any = None  # the magicgui form of the current tool
+        self.file_sources: dict[str, Any] = {}  # image parameter -> "or file" widget
+        self.unset_toggles: dict[str, Any] = {}  # nullable parameter -> "set" checkbox
+        self.region_toggles: dict[str, Any] = {}  # RegionOf parameter -> "use the selection" checkbox
+        self.channel_boxes: dict[str, Any] = {}  # PickChannel image parameter -> its channel chooser
+        self.advanced_toggle: Any = (
             None  # "Show advanced settings" checkbox (only when a tool has advanced parameters)
         )
-        self._members = {}  # parameter -> its widgets (value widget, "or file" row, "set" checkbox)
-        self.task = self.worker = self.last_task = None
-        self.presenter = None
-        self.last_record = None
+        self._members: dict[str, list[Any]] = (
+            {}
+        )  # parameter -> its widgets (value widget, "or file" row, "set" box)
+        self.task: Any = None
+        self.worker: Any = None
+        self.last_task: Any = None
+        self.presenter: Any = None  # a ResultPresenter once a run has started
+        self.last_record: Any = None
         self.last_details = ""
-        self._request = {}
-        self._run_app = self._run_tool = (
-            None  # what the running task was started with (the choosers may change meanwhile)
-        )
-        self.timings = {}
-        self._choice_problems = {}  # (request number, parameter) -> why the choices could not be fetched
-        self._choice_boxes = {}  # ChoicesFrom parameter -> its dropdown
-        self._choice_seq = {}  # parameter -> number of the newest question; older answers are dropped
-        self._docks = {}  # (app, table name) -> dock widget, so that Replace can swap it
-        self._group_members = {}  # collapsible group -> widgets
+        self._request: dict[str, Any] = {}
+        # what the running task was started with (the choosers may change meanwhile)
+        self._run_app: Any = None
+        self._run_tool: Any = None
+        self.timings: dict[str, float] = {}
+        self._choice_problems: dict[tuple[int, str], str] = (
+            {}
+        )  # (request number, parameter) -> why no choices
+        self._choice_boxes: dict[str, Any] = {}  # ChoicesFrom parameter -> its dropdown
+        self._choice_seq: dict[str, int] = (
+            {}
+        )  # parameter -> number of the newest question; older answers are dropped
+        self._docks: dict[tuple[str, str], Any] = (
+            {}
+        )  # (app, table name) -> dock widget, so that Replace can swap it
+        self._group_members: dict[str, list[Any]] = {}  # collapsible group -> widgets
 
     # ---- layout -------------------------------------------------------
     def _build_layout(self) -> None:
@@ -255,7 +272,7 @@ class LabConstrictorWidget(QWidget):
         self.app_box.changed.connect(self._on_app_changed)
         self.tool_box.changed.connect(self._on_tool_changed)
 
-    def showEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
+    def showEvent(self, event: Any) -> None:  # Qt API name
         super().showEvent(event)
         if not getattr(self, "_shown_once", False):
             self._shown_once = True
@@ -331,10 +348,11 @@ class LabConstrictorWidget(QWidget):
     def _make_form(self, tool: Tool) -> Any:
         from napari.layers import Image, Labels
 
-        def run(**form_values):
+        def run(**form_values: Any) -> None:
             self._launch(form_values)
 
-        run.__signature__ = signature_from_schema(tool, {"image": Image, "labels": Labels})
+        signature = signature_from_schema(tool, {"image": Image, "labels": Labels})
+        run.__signature__ = signature  # type: ignore[attr-defined]  # typeshed omits __signature__ on functions; magicgui reads it
         run.__name__ = tool["id"]
         return magicgui(run, call_button="Run", persist=False, auto_call=False)
 
@@ -508,7 +526,8 @@ class LabConstrictorWidget(QWidget):
 
     def _insert_headings(self, inputs: list[Param]) -> list[Any]:
         """Put the group headings (and the 'Show advanced settings' box) into the form; returns the advanced widgets."""
-        advanced_widgets, previous_group = [], None
+        advanced_widgets: list[Any] = []
+        previous_group = None
         for p in inputs:
             first = self._members[p["name"]][0]
             if p.get("advanced") and self.advanced_toggle is None:
@@ -531,9 +550,12 @@ class LabConstrictorWidget(QWidget):
             value=False, text="Show advanced settings", label="", gui_only=True
         )
         self.gui.insert(list(self.gui).index(first), self.advanced_toggle)
-        self.advanced_toggle.changed.connect(
-            lambda shown: [setattr(w, "visible", bool(shown)) for w in advanced_widgets]
-        )
+
+        def show_advanced(shown: Any) -> None:
+            for w in advanced_widgets:
+                w.visible = bool(shown)
+
+        self.advanced_toggle.changed.connect(show_advanced)
 
     def _group_heading_widget(self, group: str, collapsed: Any) -> Any:
         if collapsed:
@@ -652,9 +674,8 @@ class LabConstrictorWidget(QWidget):
                     task.status,
                 )
                 self._choice_problems[(number, name)] = "%s gave no choices for %s" % (src.get("tool"), name)
-        except (
-            Exception
-        ):  # noqa: BLE001 - broad on purpose (isolation boundary): any worker failure must leave the text field usable
+        # BLE001: isolation boundary - any worker failure must leave the text field usable
+        except Exception:  # noqa: BLE001
             log.error("napari: could not ask %s for choices", src.get("tool"), exc_info=True)
             self._choice_problems[(number, name)] = "could not get the choices for %s (see the log)" % name
         finally:
@@ -682,7 +703,7 @@ class LabConstrictorWidget(QWidget):
                     self.status.setText("⚠ " + text)
             return
         current = field.value or ""
-        param = next((p for p in self.tool["inputs"] if p["name"] == name), {})
+        param: Param = next((p for p in cast(Tool, self.tool)["inputs"] if p["name"] == name), {})
         # A blank entry means "no answer" (unset for an optional parameter, or when the field is empty). A value the field already
         # holds (its default, or what was typed) stays selectable even when the source tool does not list it: never silently dropped.
         entries = (
@@ -795,9 +816,8 @@ class LabConstrictorWidget(QWidget):
         except ValueError as error:  # something the user can fix: say it plainly
             shutil.rmtree(job_dir, ignore_errors=True)
             self.status.setText("⚠ %s" % error)
-        except (
-            Exception
-        ) as error:  # noqa: BLE001 - e.g. the disk is full while saving a layer: clean up, say so, log it
+        # BLE001: e.g. the disk is full while saving a layer - clean up, say so, log it
+        except Exception as error:  # noqa: BLE001
             log.error("napari: cannot prepare the inputs for %s", self.app_box.value, exc_info=True)
             shutil.rmtree(job_dir, ignore_errors=True)
             self._show_failure("could not prepare the inputs: %s" % error, error)
@@ -836,9 +856,8 @@ class LabConstrictorWidget(QWidget):
             )
             self.task = task
             threading.Thread(target=lambda: (task.wait(), self._signals.done.emit(task)), daemon=True).start()
-        except (
-            Exception
-        ) as error:  # noqa: BLE001 - e.g. the app's Python is gone, or the worker died at once: undo the start
+        # BLE001: e.g. the app's Python is gone or the worker died at once - undo the start
+        except Exception as error:  # noqa: BLE001
             log.error("napari: cannot start %s for %s", self._run_tool["id"], self._run_app, exc_info=True)
             if worker is not None:
                 self._workers.release(self._run_app, worker, keep=False)
@@ -859,7 +878,7 @@ class LabConstrictorWidget(QWidget):
     def _export_inputs(self, form_values: dict[str, Any], job_dir: Path) -> dict[str, Any]:
         """Form values -> worker inputs (layers are saved as TIFF; calibration travels as explicit parameters)."""
         inputs = {}
-        for param in self.tool["inputs"]:
+        for param in cast(Tool, self.tool)["inputs"]:
             exported = self._export_param(param, form_values, job_dir)
             if exported is not _OMIT:
                 inputs[param["name"]] = exported
@@ -903,7 +922,7 @@ class LabConstrictorWidget(QWidget):
         file it came from (a file chosen in the form, else the layer's source file) or None, which becomes a placeholder.
         """
         values = {}
-        for param in self.tool["inputs"]:
+        for param in cast(Tool, self.tool)["inputs"]:
             value = self._command_value(param)
             if value is not _OMIT:
                 values[param["name"]] = value
@@ -1057,7 +1076,7 @@ class LabConstrictorWidget(QWidget):
         tool = self._run_tool
         if self.gui is None or tool is not self.tool:
             return
-        for p in tool["inputs"]:
+        for p in cast(Tool, tool)["inputs"]:
             if not p.get("clear_after_run"):
                 continue
             widget = self.gui[p["name"]]
@@ -1105,7 +1124,7 @@ class LabConstrictorWidget(QWidget):
         box.setDetailedText(self.last_details)
         box.exec_()
 
-    def closeEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
+    def closeEvent(self, event: Any) -> None:  # Qt API name
         self._reaper.stop()
         if (
             self.task is not None and not self.task.done.is_set()

@@ -35,8 +35,22 @@ line-length = 110
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP"]
+select = ["E", "F", "W", "I", "B", "UP", "BLE", "S", "SIM", "RUF"]
 ignore = ["E501", "UP031", "UP032", "B905"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["E402", "B007", "E741", "E731"]   # scripts: short names in one-line checks, throwaway lambdas
+"tests/**" = [
+    "E402", "B007", "E741", "E731",   # scripts: short names in one-line checks, throwaway lambdas
+    "S603", "S607",                    # the tests start the example app's CLI/worker with fixed argument lists, no shell
+    "RUF100",                          # these scripts carry noqa comments for E402 that the ignore above makes redundant; tests are not edited in this pass
+    "SIM115",                          # a log file kept open for the length of a test, closed in its cleanup
+]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true   # napari, magicgui, qtpy, pint, tifffile and labconstrictor_tools ship no (usable) stubs
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = false         # most values come from untyped Qt/magicgui calls
+no_implicit_optional = true
