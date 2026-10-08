@@ -92,6 +92,7 @@ expect("5000_options_with_unicode_fill_a_dropdown", len(many) >= 5000 and any("�
 expect("non_string_option_becomes_text", "7" in many, many[-4:])
 expect("broken_source_keeps_the_text_field", shown(w.gui.a) and not shown(w._choice_boxes["a"]))
 expect("source_returning_a_non_list_keeps_the_text_field", shown(w.gui.b) and not shown(w._choice_boxes["b"]))
+expect("a_failed_choices_question_is_said_in_the_status_line", "gave no choices" in w.gui.a.native.toolTip() and "type the value" in w.gui.a.native.toolTip(), w.gui.a.native.toolTip())
 expect("the_form_is_still_usable", w.gui.call_button.enabled)
 expect("a_default_the_source_does_not_list_is_kept_not_blanked", w.gui.mode.value == "x" and w._choice_boxes["mode"].value == "x", (w.gui.mode.value, w._choice_boxes["mode"].value))
 w._choice_boxes["c"].value = "opt 00042 é中"

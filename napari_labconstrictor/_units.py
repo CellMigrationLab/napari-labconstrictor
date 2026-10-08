@@ -1,5 +1,16 @@
 """Calibration handling: napari layers carry scale + units; the tools want micrometres per pixel."""
 
+import struct
+
+from labconstrictor_tools import log
+from pint.errors import PintError
+
+# What reading a TIFF header can realistically raise: a file that is missing or unreadable (OSError), not a TIFF
+# (tifffile.TiffFileError is a ValueError), a damaged or odd tag (ValueError/KeyError/IndexError/TypeError/struct.error).
+TIFF_READ_ERRORS = (OSError, ValueError, KeyError, IndexError, TypeError, struct.error)
+
+_unparsable_units = set()  # units already reported: the log says it once, not once per call
+
 
 def _layer_microns(scale, unit):
     """(micrometres per pixel, assumed) for one axis. `assumed`: a scale with no usable length unit (napari's 'pixel')."""
@@ -7,8 +18,16 @@ def _layer_microns(scale, unit):
     if unit:
         try:
             return scale * float((1 * unit).to("micrometer").magnitude), False
-        except Exception:  # noqa: BLE001 - dimensionless/pixel/unknown unit: pint raises various errors
-            pass
+        except (PintError, TypeError, AttributeError) as error:  # dimensionless ("pixel"), unknown or non-pint unit
+            # Intended fallback: the scale is taken as micrometres and the caller tells the person ("assumed").
+            if str(unit) not in _unparsable_units:
+                _unparsable_units.add(str(unit))
+                log.warning(
+                    "napari: unit %r is not a length (%s: %s); assuming micrometres",
+                    unit,
+                    type(error).__name__,
+                    error,
+                )
     return scale, True
 
 
@@ -55,6 +74,12 @@ def microns_from_tiff(path):
 
 def microns_yx_from_tiff(path):
     """(y, x) pixel size (um) stored in a TIFF, or None when absent / unit unknown. A missing YResolution means square."""
+    return microns_yx_from_tiff_checked(path)[0]
+
+
+def microns_yx_from_tiff_checked(path):
+    """-> (yx, problem): `problem` is a sentence when the file could not be read (then yx is None), else None.
+    A readable file without calibration gives (None, None). A failure is logged here, on every call."""
     import tifffile
 
     try:
@@ -62,7 +87,7 @@ def microns_yx_from_tiff(path):
             tags = tif.pages[0].tags
             x = _tag_pixel(tags, "XResolution")
             if x is None:
-                return None
+                return None, None
             y = _tag_pixel(tags, "YResolution")
             y = x if y is None else y
             unit = (
@@ -77,10 +102,11 @@ def microns_yx_from_tiff(path):
                 code = tags["ResolutionUnit"].value if "ResolutionUnit" in tags else 2
                 factor = _RESOLUTION_UNIT_MICRONS.get(int(code))
                 if not factor or unit:
-                    return None
-            return y * factor, x * factor
-    except Exception:  # noqa: BLE001 - not a TIFF / unreadable: the user simply types the value
-        return None
+                    return None, None
+            return (y * factor, x * factor), None
+    except (*TIFF_READ_ERRORS, tifffile.TiffFileError) as error:  # not a TIFF / unreadable: the person types the value
+        log.warning("napari: cannot read the calibration of %s (%s: %s)", path, type(error).__name__, error)
+        return None, "could not read the pixel size from %s (%s): type it" % (path, error)
 
 
 def _tag_pixel(tags, name):

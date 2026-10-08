@@ -132,7 +132,10 @@ class ResultPresenter:
         if result["name"] in self.replace and key in self.docks:
             try:
                 self.viewer.window.remove_dock_widget(self.docks.pop(key))
-            except Exception:  # noqa: BLE001 - the user closed it already
+            except (LookupError, RuntimeError) as error:  # the user closed it already (not found / Qt object deleted)
+                log.warning(
+                    "napari: the old '%s' table was already gone (%s: %s)", result["name"], type(error).__name__, error
+                )
                 self.docks.pop(key, None)
         self.viewer.window.add_dock_widget(widget, name=result["name"], area="bottom")
         self.docks[key] = widget

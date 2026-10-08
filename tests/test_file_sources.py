@@ -134,6 +134,12 @@ w.file_sources["image"].value = TMP / "calibrated.tif"
 pump(0.4)
 expect("calibration_from_file", abs(w.gui.scale.value - 0.5) < 1e-9, w.gui.scale.value)
 
+# a file whose header cannot be read is said so in the status line (it used to be swallowed silently)
+w.status.setText("")
+w.file_sources["image"].value = TMP / "broken.tif"
+pump(0.4)
+expect("unreadable_file_is_reported", "could not read" in w.status.text() and "broken.tif" in w.status.text(), w.status.text())
+
 (EVIDENCE / "file_sources_report.json").write_text(json.dumps(report, indent=2))
 print(json.dumps(report, indent=2))
 print("FAILURES:", failures or "none")
