@@ -1,61 +1,102 @@
-# napari-labconstrictor
+# LabConstrictor for Napari
 
-One generic Napari dock widget for **every installed LabConstrictor app**. Pick an app and a tool; the form is generated from the
-tool's declared schema (see [LabConstrictor-Tools](https://github.com/CellMigrationLab/LabConstrictor-Tools)). The tool runs in the
-app's own Python environment in a separate process, so Napari never imports the app's packages and apps with conflicting
-dependencies coexist.
+**Run analysis from installed LabConstrictor applications without leaving Napari.**
 
-![widget](docs/screenshot.png)
+Choose an image layer, select an analysis tool and run it. Results come back as Napari layers, tables or messages. The analysis itself runs in the application's own Python environment, so you do not need to install its scientific dependencies into Napari.
+
+The plugin provides **one dock widget for all registered LabConstrictor applications**. It builds the controls from each tool's Python declaration.
+
+![LabConstrictor tools dock widget](docs/screenshot.png)
+
+## Try it with a built-in image
+
+The [LabConstrictor Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground) is a useful first application. Install it, open the LabConstrictor widget and select **Feature tour**.
+
+You can leave its image input unset: the tool makes a small demonstration image with blobs and rings. It returns a label image, outlines, points, a measurements table and a summary. Try changing the threshold to see how a second run updates results marked for replacement.
+
+Playground is a test application, not a substitute for a validated scientific analysis. Once you have an application such as NucleiSky or CellTracksColab installed and registered, its declared tools appear in the same widget.
+
+## Use it with your own data
+
+1. Open an image in Napari, or prepare a TIFF/OME-TIFF file.
+2. Choose **Plugins > LabConstrictor tools**.
+3. Select the registered application and the tool.
+4. Choose a layer or file for each image input. If both are set, **the file wins**.
+5. Set the parameters and run. Watch the progress and inspect the results in Napari.
+
+The widget supports the controls a tool declares: numbers with ranges and units, choices, files, folders and optional parameters. Advanced settings can be hidden until needed. Where supported, dependent controls are disabled when they do not apply.
+
+### Selections, channels and calibration
+
+- **Use a selection:** a tool with a `RegionOf(...)` input can use a selected Shapes layer as a labelled region. This is tool-specific; it does not crop every analysis automatically.
+- **Pick a channel:** a tool with `PickChannel()` can receive a selected channel from an RGB layer or a multichannel file.
+- **Use physical units:** pixel-size inputs can follow a layer's scale or a TIFF's metadata. Check calibration before relying on measurements.
+
+## What happens to results?
+
+| Tool result | In Napari |
+|---|---|
+| Image or labels | Image or Labels layer |
+| Points or outlines | Points or Shapes layer |
+| Table | Table dock |
+| Alignment | Transformed or affine-positioned layer |
+| Message or values | Status/result display |
+| File | File path/result information |
+
+A tool can request that repeated runs replace earlier results rather than create more layers. Long-running tools can report progress and respond to **Cancel**; a worker that ignores cancellation is stopped after a grace period.
+
+If a tool reports that nothing matched, the widget treats that as a notice rather than an unexpected crash.
 
 ## Install
-In the Napari environment (Python >= 3.10):
 
-    pip install https://github.com/CellMigrationLab/LabConstrictor-Tools/archive/refs/heads/main.zip      # the runtime (not on PyPI yet)
-    pip install https://github.com/CellMigrationLab/napari-labconstrictor/archive/refs/heads/main.zip
+In the Python environment used by Napari (**Python 3.10 or newer**):
 
-(Source archives: no `git` program is needed. With git you can use `git+https://github.com/CellMigrationLab/<repository>` instead.)
+```bash
+python -m pip install https://github.com/CellMigrationLab/LabConstrictor-Tools/archive/refs/heads/main.zip
+python -m pip install https://github.com/CellMigrationLab/napari-labconstrictor/archive/refs/heads/main.zip
+```
 
-Then **Plugins > LabConstrictor tools**. The widget lists the apps registered on this machine (the LabConstrictor installer
-registers each app; for a manual registration see the Tools repository: `labconstrictor-tools register ...`).
-`labconstrictor-tools doctor` shows what is registered and why an app might be skipped.
+Then start Napari and choose **Plugins > LabConstrictor tools**.
 
-## What it does
-* **Forms from schemas**: numbers with ranges and units, choices, checkboxes, file and folder pickers. A value that is optional and has no default (a seed, a time limit) has a **"set" checkbox**: unticked, it is greyed out and the tool receives `None`.
-* **Longer forms made readable**: parameters of a `group` sit under a bold heading, `advanced` ones behind a **"Show advanced settings"** box (closed by default), and settings that do not apply to the current choice (`enabled_when`) are greyed out.
-* **Image inputs from an open layer *or* a file**: each image parameter has a layer chooser and an "or file" row; a chosen file wins.
-  TIFF/OME-TIFF always, other formats if the app has `imageio`. Tables are chosen as CSV files.
-* **Calibration**: a pixel-size field linked to an image follows the layer (units converted to micrometres) or the TIFF header.
-* **Typed results**: images/labels become layers, tables a table dock, alignments an affine-placed layer, values the status line.
-* **"No match" is a notice, not an error**: a tool that fails with the code `no_match` / `no_result` is shown as a warning line, not a red cross.
-* **Progress and Cancel**; a tool that ignores Cancel has its worker killed after 3 s. Optional worker reuse for fast repeat runs.
-* **When something fails**: the status line says what, **Details...** shows the error, traceback, worker output and log tail, and
-  everything is in `~/.labconstrictor/logs/labconstrictor.log` (`labconstrictor-tools support-bundle` zips it for a bug report).
-  Every run also leaves `~/.labconstrictor/runs/<time>_<app>_<tool>/run.json`.
+You must also install the LabConstrictor application whose tools you want to run. Its installer normally registers it. If nothing appears, inspect the registry:
 
-## Development and tests
-    pip install -e ".[test]"                       # also install labconstrictor-tools (see above)
-    cd tests
-    python test_units.py
-    QT_QPA_PLATFORM=offscreen python test_results_and_workers.py   # per-axis calibration, result display limits, worker cache
-    xvfb-run -a python test_widget.py              # on Linux without a display; elsewhere run directly
-    xvfb-run -a python test_file_sources.py
-    xvfb-run -a python test_run_state.py
-    xvfb-run -a python test_presentation.py        # groups, advanced toggle, enabled_when
-    xvfb-run -a python test_interactions.py        # ChoicesFrom dropdown, ClearAfterRun, Collapsed accordion, Replace
-    xvfb-run -a python test_widgets.py             # Widget("slider") and Widget("radio")
-    xvfb-run -a python test_copy_command.py        # Copy as command: terminal line and Python snippet, run for real
-    xvfb-run -a python test_shapes.py              # ShapesOut: GeoJSON outlines as a shapes layer
-    xvfb-run -a python test_region.py              # RegionOf: use the selection as the region (labels 1..N), refusals
-    xvfb-run -a python test_scroll.py              # a form taller than the dock scrolls; Run/status stay in view
-    xvfb-run -a python test_messages_points.py     # message and points outputs with the example app of labconstrictor-tools
-    xvfb-run -a python test_channels.py            # PickChannel: channel chooser for RGB layers and multi-channel TIFF files
-    xvfb-run -a python test_widget_hardening.py    # failed starts, unshowable results, full disk, duplicate labels, optional yes/no
+```bash
+labconstrictor-tools list
+labconstrictor-tools doctor
+```
 
-The tests register the example app shipped with `labconstrictor-tools` (`labconstrictor_tools.examples.synthetic`) in a private
-registry, so no real LabConstrictor app is needed. Real apps are tested in their own repositories.
+The widget reads cached tool descriptions, then runs each tool through the Toolkit worker in that application's own interpreter.
 
-Layout: `napari_labconstrictor/` = `_widget.py` (the dock widget), `_schema.py` (schema -> magicgui signature), `_results.py`,
-`_units.py`, `_workers.py` (worker cache), `napari.yaml` (npe2 manifest).
+## Reproduce and troubleshoot a run
 
-Status: **testing phase**. Tested on Linux (Qt5, Napari 0.9) under Xvfb. Windows and macOS are untested: to help, follow the
-[human test protocol](https://github.com/CellMigrationLab/LabConstrictor-Tools/blob/main/docs/HUMAN_TEST_PROTOCOL.md). License: MIT.
+The widget can copy the last run as a terminal command or Python snippet. When an input came from an unsaved layer, save the data before expecting that command to reproduce the run from disk.
+
+Failures appear in the widget; **Details** includes worker output and the log tail. The shared log is `~/.labconstrictor/logs/labconstrictor.log` by default, and run records are kept under `~/.labconstrictor/runs/`. Use `labconstrictor-tools support-bundle` to collect diagnostics for an issue.
+
+## Current status
+
+**Testing phase.** The plugin has been tested on Linux with Napari 0.9 and a virtual display. Native Windows and macOS testing remains to be done. The [human test protocol](https://github.com/CellMigrationLab/LabConstrictor-Tools/blob/main/docs/HUMAN_TEST_PROTOCOL.md) explains how to help.
+
+Not every host supports every LabConstrictor presentation hint in the same way. This README describes the Napari implementation, not a guarantee about Fiji or QuPath.
+
+## Development
+
+The widget lives in `napari_labconstrictor/_widget.py`, with schema conversion in `_schema.py`, result presentation in `_results.py`, layer/file export in `_export.py` and worker management in `_workers.py`.
+
+Install the development dependencies and run the focused tests from `tests/`:
+
+```bash
+python -m pip install -e ".[test]"
+cd tests
+python test_units.py
+xvfb-run -a python test_widget.py
+xvfb-run -a python test_interactions.py
+xvfb-run -a python test_region.py
+xvfb-run -a python test_messages_points.py
+```
+
+Other tests cover channels, file sources, calibration, cancellation, result limits, forms and failures. Most use the Toolkit's synthetic example application rather than real scientific packages.
+
+Related projects: [Toolkit](https://github.com/CellMigrationLab/LabConstrictor-Tools) · [Fiji](https://github.com/CellMigrationLab/LabConstrictor-Fiji) · [QuPath](https://github.com/CellMigrationLab/LabConstrictor-QuPath) · [Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground).
+
+License: MIT.
