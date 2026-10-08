@@ -83,9 +83,11 @@ For more detail, see [Napari inputs and results](docs/USING_NAPARI.md).
 
 ## Applications
 
-[Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground) provides a small first run. [Guess the Condition](https://github.com/CellMigrationLab/GuessTheCondition) offers blinded microscopy-image classification, and [VLab4Mic](https://github.com/CellMigrationLab/LabConstrictor-VLab4Mic) simulates fluorescence images; both document Napari bridge workflows.
+The widget reads registered LabConstrictor tool manifests. You do not need a new Napari plugin for every scientific application; its declared tools can appear in the same widget.
 
-See the [Toolkit application list](https://github.com/CellMigrationLab/LabConstrictor-Tools) for [NucleiSky](https://github.com/CellMigrationLab/NucleiSky), [CellTracksColab](https://github.com/CellMigrationLab/CellTracksColab_LabConstrictor) and installer links. Only tools registered by the installed application appear in the widget.
+Try [Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground) for a test image, [Guess the Condition](https://github.com/CellMigrationLab/GuessTheCondition) for blinded image classification or [VLab4Mic](https://github.com/CellMigrationLab/LabConstrictor-VLab4Mic) for microscopy simulations. Other applications include [NucleiSky](https://github.com/CellMigrationLab/NucleiSky) and [CellTracksColab](https://github.com/CellMigrationLab/CellTracksColab_LabConstrictor). See the [Toolkit](https://github.com/CellMigrationLab/LabConstrictor-Tools) for installation links.
+
+These are examples, not a list of applications permitted to connect. Choose tools according to whether they make sense in a layer-based workflow and whether Napari provides a useful presentation of their outputs.
 
 ## Development
 
