@@ -79,6 +79,8 @@ Failures appear in the widget; **Details** includes worker output and the log ta
 
 Not every host supports every LabConstrictor presentation hint in the same way. This README describes the Napari implementation, not a guarantee about Fiji or QuPath.
 
+For more detail, see [Napari inputs and results](docs/USING_NAPARI.md).
+
 ## Development
 
 The widget lives in `napari_labconstrictor/_widget.py`, with schema conversion in `_schema.py`, result presentation in `_results.py`, layer/file export in `_export.py` and worker management in `_workers.py`.
