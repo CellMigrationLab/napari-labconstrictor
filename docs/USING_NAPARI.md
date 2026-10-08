@@ -4,7 +4,7 @@ The LabConstrictor widget lists tools registered by installed applications. Tool
 
 ## Scientific applications
 
-For applications you can install, see [Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground), [NucleiSky](https://github.com/CellMigrationLab/NucleiSky), [VLab4Mic desktop](https://github.com/CellMigrationLab/LabConstrictor-VLab4Mic) and [CellTracksColab desktop](https://github.com/CellMigrationLab/CellTracksColab_LabConstrictor) and [Guess the Condition](https://github.com/CellMigrationLab/GuessTheCondition). The corresponding README links to installation instructions and explains which host workflows have been documented. Only tools registered by the installed application appear in the bridge.
+[Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground) can test the widget. [Guess the Condition](https://github.com/CellMigrationLab/GuessTheCondition) and [VLab4Mic](https://github.com/CellMigrationLab/LabConstrictor-VLab4Mic) document Napari workflows. See the [Toolkit application list](https://github.com/CellMigrationLab/LabConstrictor-Tools#applications) for more applications and installation links.
 
 ## First run
 
