@@ -48,7 +48,7 @@ ignore = ["E501", "UP031", "UP032", "B905"]
 
 [tool.mypy]
 python_version = "3.10"
-ignore_missing_imports = true   # napari, magicgui, qtpy, pint, tifffile and labconstrictor_tools ship no (usable) stubs
+ignore_missing_imports = true   # pint, tifffile and labconstrictor_tools ship no usable stubs (napari, magicgui, qtpy are installed and typed)
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
