@@ -2,6 +2,10 @@
 
 The LabConstrictor widget lists tools registered by installed applications. Tools run in the application's Python environment and return results to Napari.
 
+## Scientific applications
+
+For applications you can install, see [Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground), [NucleiSky](https://github.com/CellMigrationLab/NucleiSky), [VLab4Mic desktop](https://github.com/CellMigrationLab/LabConstrictor-VLab4Mic) and [CellTracksColab desktop](https://github.com/CellMigrationLab/CellTracksColab_LabConstrictor). The corresponding README links to installation instructions and explains which host workflows have been documented. Only tools registered by the installed application appear in the bridge.
+
 ## First run
 
 Install [LabConstrictor Playground](https://github.com/CellMigrationLab/LabConstrictor-Playground) and open **Plugins > LabConstrictor tools**. Select **Feature tour**. Its optional image input can be left unset to generate a demonstration image.
