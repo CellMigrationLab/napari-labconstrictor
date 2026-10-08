@@ -10,7 +10,6 @@ import threading
 import time
 from pathlib import Path
 
-import numpy as np
 from labconstrictor_tools import log, registry, runs
 from labconstrictor_tools.protocol import JOB_DIR_KEY
 from magicgui import magicgui
@@ -18,6 +17,7 @@ from magicgui import widgets as mw
 from qtpy.QtCore import QObject, Qt, QTimer, Signal
 from qtpy.QtWidgets import QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
+from ._export import channel_file, export_layer, is_set as _is_set, selection_mask
 from ._results import COULD_NOT_DISPLAY, FileInput, ResultPresenter
 from ._schema import presentation_order, rule_satisfied, signature_from_schema
 from ._units import (
@@ -28,14 +28,10 @@ from ._units import (
 )
 from ._workers import WorkerCache
 
-MAX_EXPORT_BYTES = 4 * 1024**3  # refuse to write a layer larger than this to a temporary TIFF
 CANCEL_GRACE_S = 3.0  # how long a tool gets to honour Cancel before its worker is killed
 _FINISH_TEXT = {"CANCELED": "cancelled"}
+_OMIT = object()  # "leave this parameter out" (None is a real value)
 _NO_RESULT_CODES = ("no_match", "no_result")  # an outcome ("nothing found"), not a fault: shown as a notice
-
-
-def _is_set(path):
-    return path is not None and str(path) not in ("", ".")
 
 
 def _tool_names(schema):
@@ -386,40 +382,10 @@ class LabConstrictorWidget(QWidget):
         return toggles
 
     def _selection_mask(self, param, form_values, job_dir):
-        """The shapes of the selected Shapes layer as a label image the size of the image named by `param["region_of"]`
-        (labels 1..N). Anything that makes that impossible is said to the person, never guessed around."""
-        from napari.layers import Shapes
-        from tifffile import imwrite
-
-        label = param["label"]
-        layer = next((l for l in self.viewer.layers.selection if isinstance(l, Shapes)), None)
-        if layer is None:
-            raise ValueError("'%s': select a Shapes layer in the layer list, or untick 'use the selection'" % label)
-        if len(layer.data) == 0:
-            raise ValueError("'%s': the selected Shapes layer '%s' has no shapes" % (label, layer.name))
-        source = self.file_sources.get(param["region_of"])
-        image = form_values.get(param["region_of"])
-        if source is not None and _is_set(source.value):
-            import tifffile
-
-            with tifffile.TiffFile(str(source.value)) as tif:
-                shape, scale = tif.series[0].shape[-2:], None
-        elif image is not None:
-            shape = (image.data[0] if getattr(image, "multiscale", False) else image.data).shape[-2:]
-            scale = tuple(image.scale[-2:])
-        else:
-            raise ValueError("'%s': choose the image it belongs to first" % label)
-        if scale is not None and not np.allclose(layer.scale[-2:], scale):
-            raise ValueError(
-                "'%s': the Shapes layer '%s' has the scale %s but the image has %s; give them the same scale"
-                % (label, layer.name, tuple(layer.scale[-2:]), scale)
-            )
-        mask = np.asarray(layer.to_labels(labels_shape=tuple(shape)), dtype=np.int32)
-        if not mask.any():
-            raise ValueError("'%s': the shapes of '%s' lie outside the image" % (label, layer.name))
-        path = job_dir / (param["name"] + ".tif")
-        imwrite(path, mask)
-        return str(path)
+        """The shapes of the selected Shapes layer as a label image (see `_export.selection_mask`)."""
+        return selection_mask(
+            self.viewer, param, self.file_sources.get(param["region_of"]), form_values.get(param["region_of"]), job_dir
+        )
 
     # ---- presentation hints: group headings, advanced settings, enabled_when ----
     def _apply_presentation(self, tool):
@@ -766,84 +732,77 @@ class LabConstrictorWidget(QWidget):
 
     def _export_inputs(self, form_values, job_dir):
         """Form values -> worker inputs (layers are saved as TIFF; calibration travels as explicit parameters)."""
-        from tifffile import imwrite
-
         inputs = {}
         for param in self.tool["inputs"]:
-            value = form_values.get(param["name"])
-            source = self.file_sources.get(param["name"])
-            region = self.region_toggles.get(param["name"])
-            if region is not None and region.value:  # RegionOf: the selection is the value
-                inputs[param["name"]] = self._selection_mask(param, form_values, job_dir)
-                continue
-            if source is not None and _is_set(source.value):  # file chosen: the worker reads it directly
-                path = Path(source.value)
-                if not path.is_file():
-                    raise ValueError("'%s': file not found: %s" % (param["label"], path))
-                picked = self._picked_channel(param["name"])
-                if picked is not None:  # PickChannel: the file's chosen channel is written for the worker
-                    path = self._channel_file(path, picked, param["label"], job_dir / (param["name"] + ".tif"))
-                inputs[param["name"]] = str(path)
-                continue
-            toggle = self.unset_toggles.get(param["name"])
-            if toggle is not None and not toggle.value:  # nullable and not set: omit it
-                continue
-            if value is None or (isinstance(value, Path) and str(value) in ("", ".")):
-                if param["required"]:
-                    raise ValueError("'%s' is required" % param["label"])
-                continue
-            if param["type"] in ("image", "labels"):
-                path = job_dir / (param["name"] + ".tif")
-                data = (
-                    value.data[0] if getattr(value, "multiscale", False) else value.data
-                )  # multiscale: full resolution
-                size = int(np.prod(data.shape)) * np.dtype(data.dtype).itemsize
-                if size > MAX_EXPORT_BYTES:
-                    raise ValueError(
-                        "layer '%s' is %.1f GB; exporting more than %.0f GB is not supported"
-                        % (value.name, size / 1024**3, MAX_EXPORT_BYTES / 1024**3)
-                    )
-                data = np.asarray(data)
-                picked = self._picked_channel(param["name"])
-                if picked is not None and getattr(value, "rgb", False):  # PickChannel on an RGB layer: one colour
-                    data = data[..., picked]
-                imwrite(path, data)
-                inputs[param["name"]] = str(path)
-            elif param["type"] in ("table", "file", "folder"):
-                inputs[param["name"]] = str(value)
-            else:
-                inputs[param["name"]] = value
+            exported = self._export_param(param, form_values, job_dir)
+            if exported is not _OMIT:
+                inputs[param["name"]] = exported
         return inputs
+
+    def _export_param(self, param, form_values, job_dir):
+        """The worker input for one parameter, or `_OMIT` when it is left out of the request."""
+        name = param["name"]
+        value = form_values.get(name)
+        source = self.file_sources.get(name)
+        region = self.region_toggles.get(name)
+        if region is not None and region.value:  # RegionOf: the selection is the value
+            return self._selection_mask(param, form_values, job_dir)
+        if source is not None and _is_set(source.value):  # file chosen: the worker reads it directly
+            return self._export_file_source(param, Path(source.value), job_dir)
+        toggle = self.unset_toggles.get(name)
+        if toggle is not None and not toggle.value:  # nullable and not set: omit it
+            return _OMIT
+        if value is None or (isinstance(value, Path) and str(value) in ("", ".")):
+            if param["required"]:
+                raise ValueError("'%s' is required" % param["label"])
+            return _OMIT
+        if param["type"] in ("image", "labels"):
+            path = job_dir / (name + ".tif")
+            export_layer(value, self._picked_channel(name), path)
+            return str(path)
+        if param["type"] in ("table", "file", "folder"):
+            return str(value)
+        return value
+
+    def _export_file_source(self, param, path, job_dir):
+        if not path.is_file():
+            raise ValueError("'%s': file not found: %s" % (param["label"], path))
+        picked = self._picked_channel(param["name"])
+        if picked is not None:  # PickChannel: the file's chosen channel is written for the worker
+            path = channel_file(path, picked, param["label"], job_dir / (param["name"] + ".tif"))
+        return str(path)
 
     def current_values(self):
         """The form as the values a command line needs: unset optional parameters are omitted; an image or labels input is the
         file it came from (a file chosen in the form, else the layer's source file) or None, which becomes a placeholder."""
-        form = self.gui
         values = {}
         for param in self.tool["inputs"]:
-            name = param["name"]
-            toggle = self.unset_toggles.get(name)
-            if toggle is not None and not toggle.value:
-                continue
-            region = self.region_toggles.get(name)
-            if region is not None and region.value:  # a selection cannot be written on a command line: the note says so
-                values[name] = "region.tif"
-                continue
-            source = self.file_sources.get(name)
-            if source is not None and _is_set(source.value):
-                values[name] = str(source.value)
-                continue
-            value = form[name].value
-            if param["type"] in ("image", "labels"):
-                path = getattr(getattr(value, "source", None), "path", None)
-                values[name] = str(path) if path else None
-            elif value is None or (isinstance(value, Path) and str(value) in ("", ".")):
-                continue
-            elif param["type"] in ("table", "file", "folder"):
-                values[name] = str(value)
-            else:
-                values[name] = value
+            value = self._command_value(param)
+            if value is not _OMIT:
+                values[param["name"]] = value
         return values
+
+    def _command_value(self, param):
+        """One parameter as a command line needs it, or `_OMIT` when it is left out."""
+        name = param["name"]
+        toggle = self.unset_toggles.get(name)
+        if toggle is not None and not toggle.value:
+            return _OMIT
+        region = self.region_toggles.get(name)
+        if region is not None and region.value:  # a selection cannot be written on a command line: the note says so
+            return "region.tif"
+        source = self.file_sources.get(name)
+        if source is not None and _is_set(source.value):
+            return str(source.value)
+        value = self.gui[name].value
+        if param["type"] in ("image", "labels"):
+            path = getattr(getattr(value, "source", None), "path", None)
+            return str(path) if path else None
+        if value is None or (isinstance(value, Path) and str(value) in ("", ".")):
+            return _OMIT
+        if param["type"] in ("table", "file", "folder"):
+            return str(value)
+        return value
 
     def copy_as_command(self, kind="terminal"):
         """Put the terminal line or the Python snippet that repeats this form on the clipboard."""
@@ -870,21 +829,6 @@ class LabConstrictorWidget(QWidget):
         if box is None or box.native.isHidden() or box.value in ("", None):
             return None
         return list(box.choices).index(box.value)
-
-    @staticmethod
-    def _channel_file(path, index, label, target):
-        """One channel of a multi-channel TIFF, written as its own TIFF."""
-        import tifffile
-
-        with tifffile.TiffFile(str(path)) as tif:
-            series = tif.series[0]
-            data, axes = series.asarray(), series.axes
-        if "C" not in axes:
-            return path
-        if index >= data.shape[axes.index("C")]:
-            raise ValueError("'%s': channel %d was asked for, but the file has %d" % (label, index + 1, data.shape[axes.index("C")]))
-        tifffile.imwrite(target, np.take(data, index, axis=axes.index("C")))
-        return target
 
     def _set_running(self, running):
         self.bar.setVisible(running)
