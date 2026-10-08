@@ -70,8 +70,16 @@ expect("float_slider", cls("level") == "FloatSlider", cls("level"))
 expect("int_slider", cls("count") == "Slider", cls("count"))
 expect("radio_buttons", cls("mode") == "RadioButtons", cls("mode"))
 expect("nullable_number_stays_plain", cls("maybe") != "FloatSlider", cls("maybe"))
-expect("defaults_kept", abs(g["level"].value - 0.25) < 1e-9 and g["count"].value == 3 and g["mode"].value == "b", (g["level"].value, g["count"].value, g["mode"].value))
-expect("slider_respects_bounds", g["level"].min == 0 and g["level"].max == 1 and g["count"].max == 9, (g["level"].min, g["level"].max, g["count"].max))
+expect(
+    "defaults_kept",
+    abs(g["level"].value - 0.25) < 1e-9 and g["count"].value == 3 and g["mode"].value == "b",
+    (g["level"].value, g["count"].value, g["mode"].value),
+)
+expect(
+    "slider_respects_bounds",
+    g["level"].min == 0 and g["level"].max == 1 and g["count"].max == 9,
+    (g["level"].min, g["level"].max, g["count"].max),
+)
 
 g["level"].value = 0.8
 g["count"].value = 7
@@ -81,7 +89,11 @@ w.last_task = None
 g()
 until(lambda: w.last_task is not None and w.task is w.last_task)
 text = w.status.text()
-expect("run_gets_the_widget_values", w.last_task.status == "COMPLETE" and "0.8" in text and "7" in text and "mode" in text and "c" in text, text)
+expect(
+    "run_gets_the_widget_values",
+    w.last_task.status == "COMPLETE" and "0.8" in text and "7" in text and "mode" in text and "c" in text,
+    text,
+)
 
 v.window._qt_window.resize(1400, 800)
 pump(0.5)

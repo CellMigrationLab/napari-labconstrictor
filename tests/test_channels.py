@@ -79,18 +79,34 @@ run()
 expect("single_channel_layer_is_sent_as_it_is", "mean=7" in w.status.text(), w.status.text())
 w.gui.image.value = layer_rgb
 pump(0.4)
-expect("rgb_layer_lists_the_colours", shown(box) and list(box.choices) == ["Red", "Green", "Blue"], (shown(box), list(box.choices)))
+expect(
+    "rgb_layer_lists_the_colours",
+    shown(box) and list(box.choices) == ["Red", "Green", "Blue"],
+    (shown(box), list(box.choices)),
+)
 for index, colour in enumerate(["Red", "Green", "Blue"]):
     box.value = colour
     run()
-    expect("rgb_%s_is_what_the_tool_receives" % colour, "mean=%d" % (10 * (index + 1)) in w.status.text() and "32 x 32" in w.status.text(), w.status.text())
+    expect(
+        "rgb_%s_is_what_the_tool_receives" % colour,
+        "mean=%d" % (10 * (index + 1)) in w.status.text() and "32 x 32" in w.status.text(),
+        w.status.text(),
+    )
 w.file_sources["image"].value = work / "three.tif"
 pump(0.6)
-expect("file_with_channels_lists_them", shown(box) and list(box.choices) == ["Channel 1", "Channel 2", "Channel 3"], list(box.choices))
+expect(
+    "file_with_channels_lists_them",
+    shown(box) and list(box.choices) == ["Channel 1", "Channel 2", "Channel 3"],
+    list(box.choices),
+)
 for index in range(3):
     box.value = "Channel %d" % (index + 1)
     run()
-    expect("file_channel_%d_is_what_the_tool_receives" % (index + 1), "mean=%d" % (10 * (index + 1)) in w.status.text() and "32 x 32" in w.status.text(), w.status.text())
+    expect(
+        "file_channel_%d_is_what_the_tool_receives" % (index + 1),
+        "mean=%d" % (10 * (index + 1)) in w.status.text() and "32 x 32" in w.status.text(),
+        w.status.text(),
+    )
 w.file_sources["image"].value = work / "flat.tif"
 pump(0.6)
 expect("single_channel_file_has_no_chooser", not shown(box))
@@ -99,7 +115,9 @@ expect("single_channel_file_is_sent_as_it_is", "mean=7" in w.status.text(), w.st
 w.file_sources["image"].value = work / "three.tif"
 pump(0.6)
 box.value = "Channel 2"
-v.screenshot(str(Path(__file__).resolve().parent.parent / "evidence" / "widget_channels.png"), canvas_only=False)
+v.screenshot(
+    str(Path(__file__).resolve().parent.parent / "evidence" / "widget_channels.png"), canvas_only=False
+)
 print(json.dumps(report, indent=2))
 print("FAILURES:", failures or "none")
 sys.exit(1 if failures else 0)

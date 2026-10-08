@@ -92,7 +92,9 @@ expect("dropdown_hidden_until_the_source_can_answer", not shown(box) and shown(w
 (workdir / "options.txt").write_text("Control Treated")
 w.gui.folder.value = workdir
 until(lambda: shown(box))
-expect("dropdown_shown_with_the_options", shown(box) and not shown(w.gui.guess), [shown(box), shown(w.gui.guess)])
+expect(
+    "dropdown_shown_with_the_options", shown(box) and not shown(w.gui.guess), [shown(box), shown(w.gui.guess)]
+)
 expect("dropdown_options", list(box.choices) == ["", "Control", "Treated"], list(box.choices))
 box.value = "Treated"
 pump(0.2)
@@ -114,13 +116,21 @@ run()
 expect("first_run_ok", w.last_task.status == "COMPLETE" and "got=Treated" in w.status.text(), w.status.text())
 layers = [l.name for l in v.layers]
 expect("one_layer_after_first_run", layers == ["interact:view"], layers)
-expect("guess_cleared_after_the_run", w.gui.guess.value == "" and box.value == "" and w.unset_toggles["guess"].value is False, (w.gui.guess.value, box.value, w.unset_toggles["guess"].value))
+expect(
+    "guess_cleared_after_the_run",
+    w.gui.guess.value == "" and box.value == "" and w.unset_toggles["guess"].value is False,
+    (w.gui.guess.value, box.value, w.unset_toggles["guess"].value),
+)
 box.value = "Control"
 pump(0.2)
 run()
 layers = [l.name for l in v.layers]
 expect("replace_keeps_one_layer", layers == ["interact:view"], layers)
-expect("replaced_layer_has_the_new_data", v.layers["interact:view"].data.shape == (8 * 8, 8 * 8), v.layers["interact:view"].data.shape)
+expect(
+    "replaced_layer_has_the_new_data",
+    v.layers["interact:view"].data.shape == (8 * 8, 8 * 8),
+    v.layers["interact:view"].data.shape,
+)
 docks = [k for k in w._docks]
 expect("replace_keeps_one_table_dock", len(docks) == 1 and docks == [("interact", "log")], docks)
 
@@ -137,7 +147,11 @@ w.gui.guess.value = "keep me"
 w.gui.folder.value = Path(tempfile.gettempdir()) / "does_not_exist_lc"
 pump(0.3)
 run()
-expect("failed_run_keeps_the_guess", w.last_task.status != "COMPLETE" and w.gui.guess.value == "keep me", (w.last_task.status, w.gui.guess.value))
+expect(
+    "failed_run_keeps_the_guess",
+    w.last_task.status != "COMPLETE" and w.gui.guess.value == "keep me",
+    (w.last_task.status, w.gui.guess.value),
+)
 
 # 6. Replace on an affine output: two runs leave one overlay layer
 import numpy as np
@@ -150,8 +164,16 @@ for shift in (1.0, 4.0):
     w.gui.shift.value = shift
     run()
 overlays = [l.name for l in v.layers if l.name == "interact:alignment"]
-expect("affine_replace_keeps_one_overlay", len(overlays) == 1 and w.last_task.status == "COMPLETE", [l.name for l in v.layers])
-expect("affine_overlay_has_the_new_matrix", abs(v.layers["interact:alignment"].affine.affine_matrix[0, 2] - 4.0) < 1e-6, v.layers["interact:alignment"].affine.affine_matrix)
+expect(
+    "affine_replace_keeps_one_overlay",
+    len(overlays) == 1 and w.last_task.status == "COMPLETE",
+    [l.name for l in v.layers],
+)
+expect(
+    "affine_overlay_has_the_new_matrix",
+    abs(v.layers["interact:alignment"].affine.affine_matrix[0, 2] - 4.0) < 1e-6,
+    v.layers["interact:alignment"].affine.affine_matrix,
+)
 
 v.screenshot(str(EVIDENCE / "widget_interactions.png"), canvas_only=False)
 print(json.dumps(report, indent=2))

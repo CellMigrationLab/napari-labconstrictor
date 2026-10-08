@@ -31,13 +31,16 @@ jobs:
           xvfb-run -a python test_run_state.py
       - name: Tests (Windows/macOS)
         if: runner.os != 'Linux'
+        shell: bash
         env:
           QT_OPENGL: software
         working-directory: tests
         run: |
           python test_units.py
-          python test_widget.py
           python test_file_sources.py
+          # test_widget.py opens a napari viewer: on the Windows runner (no GPU) vispy fails with a GL "invalid operation",
+          # so the viewer test runs on Linux (Xvfb) and macOS only until a software GL is set up for Windows
+          if [ "$RUNNER_OS" != "Windows" ]; then python test_widget.py; fi
   lint:
     runs-on: ubuntu-latest
     steps:

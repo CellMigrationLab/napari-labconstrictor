@@ -57,27 +57,47 @@ w.tool_box.value = "Show a shape"
 pump(0.8)
 box = w._choice_boxes["shape"]
 until(lambda: not box.native.isHidden())
-expect("dropdown_without_depends_is_filled_at_once", list(box.choices) == ["", "square", "bar", "dot"], list(box.choices))
+expect(
+    "dropdown_without_depends_is_filled_at_once",
+    list(box.choices) == ["", "square", "bar", "dot"],
+    list(box.choices),
+)
 expect("message_hidden_before_a_run", w.message_label.isHidden())
 box.value = "square"
 run()
 names = [layer.name for layer in v.layers]
 expect("image_and_points_layers", names == ["interactions:picture", "interactions:corners"], names)
 pts = v.layers["interactions:corners"]
-expect("points_have_two_rows_and_properties", pts.data.shape == (2, 2) and list(pts.properties["corner"]) == ["top-left", "bottom-right"], (pts.data, pts.properties))
-expect("message_is_shown", not w.message_label.isHidden() and "square" in w.message_label.text(), w.message_label.text())
+expect(
+    "points_have_two_rows_and_properties",
+    pts.data.shape == (2, 2) and list(pts.properties["corner"]) == ["top-left", "bottom-right"],
+    (pts.data, pts.properties),
+)
+expect(
+    "message_is_shown",
+    not w.message_label.isHidden() and "square" in w.message_label.text(),
+    w.message_label.text(),
+)
 expect("status_mentions_the_points", "points 'corners' (2)" in w.status.text(), w.status.text())
 v.screenshot(str(EVIDENCE / "widget_messages_points_1.png"), canvas_only=False)
 box.value = "bar"
 run()
 names = [layer.name for layer in v.layers]
-expect("second_run_replaces_picture_and_points", names == ["interactions:picture", "interactions:corners"] and "bar" in w.message_label.text(), (names, w.message_label.text()))
+expect(
+    "second_run_replaces_picture_and_points",
+    names == ["interactions:picture", "interactions:corners"] and "bar" in w.message_label.text(),
+    (names, w.message_label.text()),
+)
 expect("points_follow_the_new_shape", v.layers["interactions:corners"].data.shape == (2, 2))
 v.screenshot(str(EVIDENCE / "widget_messages_points_2.png"), canvas_only=False)
 w.unset_toggles["shape"].value = True
 w.gui.shape.value = "triangle"
 run()
-expect("a_failure_shows_a_readable_error_and_hides_the_old_message", "Unknown shape" in w.status.text() and w.message_label.isHidden(), (w.status.text(), w.message_label.isHidden()))
+expect(
+    "a_failure_shows_a_readable_error_and_hides_the_old_message",
+    "Unknown shape" in w.status.text() and w.message_label.isHidden(),
+    (w.status.text(), w.message_label.isHidden()),
+)
 print(json.dumps(report, indent=2))
 print("FAILURES:", failures or "none")
 sys.exit(1 if failures else 0)

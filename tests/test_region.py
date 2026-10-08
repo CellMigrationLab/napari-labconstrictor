@@ -70,24 +70,41 @@ expect("chooser_is_active_while_off", w.gui["region"].enabled)
 
 run()
 everywhere = len(v.layers["interactions:spots"].data)
-expect("without_the_selection_the_whole_image_is_searched", everywhere > 0 and w.last_task.status == "COMPLETE", everywhere)
+expect(
+    "without_the_selection_the_whole_image_is_searched",
+    everywhere > 0 and w.last_task.status == "COMPLETE",
+    everywhere,
+)
 
 # a selected Shapes layer around the top-left square only
-shapes = v.add_shapes([np.array([[0, 0], [0, 25], [25, 25], [25, 0]])], shape_type="polygon", name="my region")
+shapes = v.add_shapes(
+    [np.array([[0, 0], [0, 25], [25, 25], [25, 0]])], shape_type="polygon", name="my region"
+)
 v.layers.selection = {shapes}
 toggle.value = True
 pump(0.3)
 expect("chooser_yields_to_the_selection", not w.gui["region"].enabled)
 run()
 spots = v.layers["interactions:spots"].data
-expect("only_the_region_is_searched", w.last_task.status == "COMPLETE" and 0 < len(spots) < everywhere and spots[:, 0].max() < 25 and spots[:, 1].max() < 25, (w.status.text(), len(spots), spots.max(axis=0).tolist()))
+expect(
+    "only_the_region_is_searched",
+    w.last_task.status == "COMPLETE"
+    and 0 < len(spots) < everywhere
+    and spots[:, 0].max() < 25
+    and spots[:, 1].max() < 25,
+    (w.status.text(), len(spots), spots.max(axis=0).tolist()),
+)
 
 # several shapes arrive as labels 1..N
 shapes.add([np.array([[35, 55], [35, 75], [55, 75], [55, 55]])], shape_type="polygon")
 v.layers.selection = {shapes}
 inputs = w._export_inputs({"image": v.layers["field"], "region": None}, Path(tempfile.mkdtemp()))
 mask = tifffile.imread(inputs["region"])
-expect("mask_has_the_image_size_and_labels_1_to_N", mask.shape == (60, 80) and sorted(set(mask.flat)) == [0, 1, 2], (mask.shape, sorted(set(mask.flat))))
+expect(
+    "mask_has_the_image_size_and_labels_1_to_N",
+    mask.shape == (60, 80) and sorted(set(mask.flat)) == [0, 1, 2],
+    (mask.shape, sorted(set(mask.flat))),
+)
 
 # refusals are explained, not guessed around
 v.layers.selection = {v.layers["field"]}
@@ -103,14 +120,18 @@ try:
     expect("empty_shapes_layer_is_refused", False, "no error")
 except ValueError as error:
     expect("empty_shapes_layer_is_refused", "has no shapes" in str(error), str(error))
-outside = v.add_shapes([np.array([[200, 200], [200, 220], [220, 220], [220, 200]])], shape_type="polygon", name="outside")
+outside = v.add_shapes(
+    [np.array([[200, 200], [200, 220], [220, 220], [220, 200]])], shape_type="polygon", name="outside"
+)
 v.layers.selection = {outside}
 try:
     w._export_inputs({"image": v.layers["field"], "region": None}, Path(tempfile.mkdtemp()))
     expect("shapes_outside_the_image_are_refused", False, "no error")
 except ValueError as error:
     expect("shapes_outside_the_image_are_refused", "outside the image" in str(error), str(error))
-scaled = v.add_shapes([np.array([[0, 0], [0, 25], [25, 25], [25, 0]])], shape_type="polygon", name="scaled", scale=(2, 2))
+scaled = v.add_shapes(
+    [np.array([[0, 0], [0, 25], [25, 25], [25, 0]])], shape_type="polygon", name="scaled", scale=(2, 2)
+)
 v.layers.selection = {scaled}
 try:
     w._export_inputs({"image": v.layers["field"], "region": None}, Path(tempfile.mkdtemp()))
@@ -121,7 +142,9 @@ except ValueError as error:
 # copy as command says that a selection cannot be copied
 v.layers.selection = {shapes}
 text = w.copy_as_command("terminal")
-expect("copy_notes_the_selection", "the selection cannot be copied" in text and "region=region.tif" in text, text)
+expect(
+    "copy_notes_the_selection", "the selection cannot be copied" in text and "region=region.tif" in text, text
+)
 
 v.layers.remove(empty)
 v.layers.remove(outside)

@@ -15,9 +15,23 @@ from labconstrictor_tools.protocol import JOB_DIR_KEY
 from magicgui import magicgui
 from magicgui import widgets as mw
 from qtpy.QtCore import QObject, Qt, QTimer, Signal
-from qtpy.QtWidgets import QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from qtpy.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ._export import channel_file, export_layer, is_set as _is_set, selection_mask
+from ._export import channel_file, export_layer, selection_mask
+from ._export import is_set as _is_set
 from ._results import COULD_NOT_DISPLAY, FileInput, ResultPresenter
 from ._schema import presentation_order, rule_satisfied, signature_from_schema
 from ._units import (
@@ -134,7 +148,9 @@ class LabConstrictorWidget(QWidget):
         self.bar.setVisible(False)
         self.status = QLabel("idle")
         self.status.setWordWrap(True)
-        self.message_label = QLabel("")  # message results of the last run (markdown); hidden when there is none
+        self.message_label = QLabel(
+            ""
+        )  # message results of the last run (markdown); hidden when there is none
         self.message_label.setWordWrap(True)
         self.message_label.setTextFormat(Qt.MarkdownText)
         self.message_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -150,7 +166,9 @@ class LabConstrictorWidget(QWidget):
         self.details_button.setEnabled(False)
         self.details_button.setToolTip("Error details, worker output and the run record of the last run")
         self.copy_button = QPushButton("Copy as command")
-        self.copy_button.setToolTip("Copy what repeats this run outside Napari: a terminal line or a Python snippet")
+        self.copy_button.setToolTip(
+            "Copy what repeats this run outside Napari: a terminal line or a Python snippet"
+        )
         copy_menu = QMenu(self.copy_button)
         copy_menu.addAction("Terminal command").triggered.connect(lambda *_: self.copy_as_command("terminal"))
         copy_menu.addAction("Python snippet").triggered.connect(lambda *_: self.copy_as_command("python"))
@@ -158,7 +176,13 @@ class LabConstrictorWidget(QWidget):
 
     def _button_row(self):
         buttons = QHBoxLayout()
-        for button in (self.cancel_button, self.rescan_button, self.restart_button, self.details_button, self.copy_button):
+        for button in (
+            self.cancel_button,
+            self.rescan_button,
+            self.restart_button,
+            self.details_button,
+            self.copy_button,
+        ):
             buttons.addWidget(button)
         return buttons
 
@@ -172,7 +196,9 @@ class LabConstrictorWidget(QWidget):
         self.form_scroll = QScrollArea()
         self.form_scroll.setWidgetResizable(True)
         self.form_scroll.setFrameShape(QFrame.NoFrame)
-        self.form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)  # a form wider than the dock scrolls sideways: nothing is clipped out of reach
+        self.form_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAsNeeded
+        )  # a form wider than the dock scrolls sideways: nothing is clipped out of reach
         self.form_scroll.setMinimumHeight(180)
         self.form_scroll.setWidget(form_container)
         return self.form_scroll
@@ -316,13 +342,16 @@ class LabConstrictorWidget(QWidget):
 
     def _add_channel_choosers(self, tool):
         """PickChannel: a Channel chooser under the image. It lists the channels it can see (the colours of an RGB layer, the C axis of a
-        TIFF given as a file) and is hidden when there is only one; the tool then receives just the chosen channel."""
+        TIFF given as a file) and is hidden when there is only one; the tool then receives just the chosen channel.
+        """
         boxes = {}
         for param in tool["inputs"]:
             if not param.get("pick_channel") or param["name"] not in self.file_sources:
                 continue
             name = param["name"]
-            box = mw.ComboBox(choices=[""], label="  channel", tooltip="The tool receives only this channel", gui_only=True)
+            box = mw.ComboBox(
+                choices=[""], label="  channel", tooltip="The tool receives only this channel", gui_only=True
+            )
             box.visible = False
             edit = self.file_sources[name]
             self.gui.insert(list(self.gui).index(edit) + 1, box)
@@ -344,9 +373,15 @@ class LabConstrictorWidget(QWidget):
                     series = tif.series[0]
                     if "C" in series.axes:
                         return ["Channel %d" % (i + 1) for i in range(series.shape[series.axes.index("C")])]
-            except (*TIFF_READ_ERRORS, tifffile.TiffFileError) as error:  # unreadable: no channels to choose from
+            except (
+                *TIFF_READ_ERRORS,
+                tifffile.TiffFileError,
+            ) as error:  # unreadable: no channels to choose from
                 log.warning(
-                    "napari: cannot read the channels of %s (%s: %s)", source.value, type(error).__name__, error
+                    "napari: cannot read the channels of %s (%s: %s)",
+                    source.value,
+                    type(error).__name__,
+                    error,
                 )
                 self.status.setText("⚠ could not read the channels of %s: %s" % (source.value, error))
             return []
@@ -396,7 +431,8 @@ class LabConstrictorWidget(QWidget):
 
     def _add_region_toggles(self, tool):
         """RegionOf: an optional Labels input that the host fills from the selection. A 'use the selection' box (off by default)
-        decides whether the selected Shapes layer is sent as the region; when on it takes the place of the layer chooser."""
+        decides whether the selected Shapes layer is sent as the region; when on it takes the place of the layer chooser.
+        """
         toggles = {}
         for param in tool["inputs"]:
             if not param.get("region_of"):
@@ -416,7 +452,11 @@ class LabConstrictorWidget(QWidget):
     def _selection_mask(self, param, form_values, job_dir):
         """The shapes of the selected Shapes layer as a label image (see `_export.selection_mask`)."""
         return selection_mask(
-            self.viewer, param, self.file_sources.get(param["region_of"]), form_values.get(param["region_of"]), job_dir
+            self.viewer,
+            param,
+            self.file_sources.get(param["region_of"]),
+            form_values.get(param["region_of"]),
+            job_dir,
         )
 
     # ---- presentation hints: group headings, advanced settings, enabled_when ----
@@ -468,7 +508,9 @@ class LabConstrictorWidget(QWidget):
         return advanced_widgets
 
     def _add_advanced_toggle(self, first, advanced_widgets):
-        self.advanced_toggle = mw.CheckBox(value=False, text="Show advanced settings", label="", gui_only=True)
+        self.advanced_toggle = mw.CheckBox(
+            value=False, text="Show advanced settings", label="", gui_only=True
+        )
         self.gui.insert(list(self.gui).index(first), self.advanced_toggle)
         self.advanced_toggle.changed.connect(
             lambda shown: [setattr(w, "visible", bool(shown)) for w in advanced_widgets]
@@ -506,7 +548,8 @@ class LabConstrictorWidget(QWidget):
     # ---- dynamic choices (ChoicesFrom) ----
     def _add_choice_boxes(self, tool):
         """A dropdown beside the text field of a ChoicesFrom parameter. The text field stays the value (what is sent); the
-        dropdown, when the source tool could answer, hides it and writes into it. When it cannot answer, the text field shows."""
+        dropdown, when the source tool could answer, hides it and writes into it. When it cannot answer, the text field shows.
+        """
         self._choice_boxes = {}
         for p in tool["inputs"]:
             src = p.get("choices_from")
@@ -588,7 +631,9 @@ class LabConstrictorWidget(QWidget):
                     task.status,
                 )
                 self._choice_problems[(number, name)] = "%s gave no choices for %s" % (src.get("tool"), name)
-        except Exception:  # noqa: BLE001 - broad on purpose (isolation boundary): any worker failure must leave the text field usable
+        except (
+            Exception
+        ):  # noqa: BLE001 - broad on purpose (isolation boundary): any worker failure must leave the text field usable
             log.error("napari: could not ask %s for choices", src.get("tool"), exc_info=True)
             self._choice_problems[(number, name)] = "could not get the choices for %s (see the log)" % name
         finally:
@@ -619,7 +664,11 @@ class LabConstrictorWidget(QWidget):
         param = next((p for p in self.tool["inputs"] if p["name"] == name), {})
         # A blank entry means "no answer" (unset for an optional parameter, or when the field is empty). A value the field already
         # holds (its default, or what was typed) stays selectable even when the source tool does not list it: never silently dropped.
-        entries = ([""] if param.get("nullable") or not current else []) + ([current] if current and current not in options else []) + options
+        entries = (
+            ([""] if param.get("nullable") or not current else [])
+            + ([current] if current and current not in options else [])
+            + options
+        )
         box.choices = entries
         box.value = current if current in entries else entries[0]
         field.visible = False
@@ -648,8 +697,12 @@ class LabConstrictorWidget(QWidget):
             region_on = name in self.region_toggles and bool(self.region_toggles[name].value)
             if name in self.region_toggles:
                 self.region_toggles[name].enabled = applies
-            if name in self.file_sources:  # image/labels: the layer chooser yields to a chosen file (or to the selection)
-                self.gui[name].enabled = applies and not region_on and not _is_set(self.file_sources[name].value)
+            if (
+                name in self.file_sources
+            ):  # image/labels: the layer chooser yields to a chosen file (or to the selection)
+                self.gui[name].enabled = (
+                    applies and not region_on and not _is_set(self.file_sources[name].value)
+                )
                 self.file_sources[name].enabled = applies and not region_on
             elif name in self.unset_toggles:
                 self.unset_toggles[name].enabled = applies
@@ -826,7 +879,8 @@ class LabConstrictorWidget(QWidget):
 
     def current_values(self):
         """The form as the values a command line needs: unset optional parameters are omitted; an image or labels input is the
-        file it came from (a file chosen in the form, else the layer's source file) or None, which becomes a placeholder."""
+        file it came from (a file chosen in the form, else the layer's source file) or None, which becomes a placeholder.
+        """
         values = {}
         for param in self.tool["inputs"]:
             value = self._command_value(param)
@@ -841,7 +895,9 @@ class LabConstrictorWidget(QWidget):
         if toggle is not None and not toggle.value:
             return _OMIT
         region = self.region_toggles.get(name)
-        if region is not None and region.value:  # a selection cannot be written on a command line: the note says so
+        if (
+            region is not None and region.value
+        ):  # a selection cannot be written on a command line: the note says so
             return "region.tif"
         source = self.file_sources.get(name)
         if source is not None and _is_set(source.value):
@@ -870,9 +926,15 @@ class LabConstrictorWidget(QWidget):
             text = command.command_line(app, self.tool, values, python=self.apps[app].get("python", "python"))
         selected = [n for n, t in self.region_toggles.items() if t.value]
         if selected:
-            text = "# %s: the selection cannot be copied; save it as a label image and put its path here\n%s" % (", ".join(selected), text)
+            text = (
+                "# %s: the selection cannot be copied; save it as a label image and put its path here\n%s"
+                % (", ".join(selected), text)
+            )
         QApplication.clipboard().setText(text)
-        self.status.setText("✔ copied the %s to the clipboard" % ("Python snippet" if kind == "python" else "terminal command"))
+        self.status.setText(
+            "✔ copied the %s to the clipboard"
+            % ("Python snippet" if kind == "python" else "terminal command")
+        )
         return text
 
     def _picked_channel(self, name):
@@ -937,7 +999,9 @@ class LabConstrictorWidget(QWidget):
             return
         self._report_success(summaries)
         self._clear_after_run()
-        self._schedule_choices(200)  # a run may have changed what the source tool answers (e.g. a game was prepared)
+        self._schedule_choices(
+            200
+        )  # a run may have changed what the source tool answers (e.g. a game was prepared)
 
     def _show_results(self, task):
         """Show every result of a finished task: the summaries, or None after reporting that they could not be shown."""
@@ -1029,7 +1093,10 @@ class LabConstrictorWidget(QWidget):
         ):  # closed during a run: stop it, do not leave worker or temp files
             try:
                 self.worker.kill()
-            except (OSError, subprocess.SubprocessError):  # best effort while closing: already gone / cannot be signalled
+            except (
+                OSError,
+                subprocess.SubprocessError,
+            ):  # best effort while closing: already gone / cannot be signalled
                 log.error("napari: could not stop the worker while closing the widget", exc_info=True)
             shutil.rmtree(getattr(self, "_job_dir", ""), ignore_errors=True)
         self._workers.close_all()

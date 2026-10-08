@@ -104,7 +104,9 @@ class ResultPresenter:
             matrix = np.diag([target.scale[-2], target.scale[-1], 1.0]) @ matrix
         name = self._layer_name(result)
         if result["name"] in self.replace and name in self.viewer.layers:
-            self.viewer.layers.remove(self.viewer.layers[name])  # Replace(): the new alignment takes the place of the previous overlay
+            self.viewer.layers.remove(
+                self.viewer.layers[name]
+            )  # Replace(): the new alignment takes the place of the previous overlay
         self.viewer.add_image(
             source.data,
             name=name,
@@ -132,9 +134,15 @@ class ResultPresenter:
         if result["name"] in self.replace and key in self.docks:
             try:
                 self.viewer.window.remove_dock_widget(self.docks.pop(key))
-            except (LookupError, RuntimeError) as error:  # the user closed it already (not found / Qt object deleted)
+            except (
+                LookupError,
+                RuntimeError,
+            ) as error:  # the user closed it already (not found / Qt object deleted)
                 log.warning(
-                    "napari: the old '%s' table was already gone (%s: %s)", result["name"], type(error).__name__, error
+                    "napari: the old '%s' table was already gone (%s: %s)",
+                    result["name"],
+                    type(error).__name__,
+                    error,
                 )
                 self.docks.pop(key, None)
         self.viewer.window.add_dock_widget(widget, name=result["name"], area="bottom")
@@ -159,8 +167,18 @@ class ResultPresenter:
         scale = tuple(source.scale[-2:]) if source is not None and hasattr(source, "scale") else (1.0, 1.0)
         name = self._layer_name(result)
         if result["name"] in self.replace and name in self.viewer.layers:
-            self.viewer.layers.remove(self.viewer.layers[name])  # Replace(): the new points take the place of the previous ones
-        self.viewer.add_points(data, name=name, properties=properties or None, scale=scale, size=8, face_color="yellow", border_color="black")
+            self.viewer.layers.remove(
+                self.viewer.layers[name]
+            )  # Replace(): the new points take the place of the previous ones
+        self.viewer.add_points(
+            data,
+            name=name,
+            properties=properties or None,
+            scale=scale,
+            size=8,
+            face_color="yellow",
+            border_color="black",
+        )
         return "points '%s' (%d)" % (result["name"], len(frame))
 
     def _shapes(self, result):
@@ -186,7 +204,9 @@ class ResultPresenter:
         scale = tuple(source.scale[-2:]) if source is not None and hasattr(source, "scale") else (1.0, 1.0)
         name = self._layer_name(result)
         if result["name"] in self.replace and name in self.viewer.layers:
-            self.viewer.layers.remove(self.viewer.layers[name])  # Replace(): the new outlines take the place of the previous ones
+            self.viewer.layers.remove(
+                self.viewer.layers[name]
+            )  # Replace(): the new outlines take the place of the previous ones
         if polygons:
             self.viewer.add_shapes(
                 polygons, shape_type="polygon", name=name, properties=properties or None, scale=scale,
@@ -195,9 +215,14 @@ class ResultPresenter:
         else:
             self.viewer.add_shapes(name=name, scale=scale)
         if total > MAX_SHAPES:
-            self.messages.append("**%s**: showing the first %d of %d outlines." % (result["name"], MAX_SHAPES, total))
+            self.messages.append(
+                "**%s**: showing the first %d of %d outlines." % (result["name"], MAX_SHAPES, total)
+            )
         if with_holes:
-            self.messages.append("**%s**: %d outline(s) have holes; the layer draws only the outer boundary." % (result["name"], with_holes))
+            self.messages.append(
+                "**%s**: %d outline(s) have holes; the layer draws only the outer boundary."
+                % (result["name"], with_holes)
+            )
         return "outlines '%s' (%d)" % (result["name"], len(polygons))
 
     @staticmethod

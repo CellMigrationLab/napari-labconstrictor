@@ -138,7 +138,11 @@ expect("calibration_from_file", abs(w.gui.scale.value - 0.5) < 1e-9, w.gui.scale
 w.status.setText("")
 w.file_sources["image"].value = TMP / "broken.tif"
 pump(0.4)
-expect("unreadable_file_is_reported", "could not read" in w.status.text() and "broken.tif" in w.status.text(), w.status.text())
+expect(
+    "unreadable_file_is_reported",
+    "could not read" in w.status.text() and "broken.tif" in w.status.text(),
+    w.status.text(),
+)
 
 (EVIDENCE / "file_sources_report.json").write_text(json.dumps(report, indent=2))
 print(json.dumps(report, indent=2))
