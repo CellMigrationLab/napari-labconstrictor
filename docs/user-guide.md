@@ -9,12 +9,12 @@ One dock widget shows every installed LabConstrictor app. You pick an app and a 
 
 ## What you need
 
-- napari, in a Python environment with **Python 3.10 or newer**.
-- At least one LabConstrictor app installed on your computer. The app's installer registers it, which is how the plugin finds it.
+- [napari](https://napari.org), in a Python environment with **Python 3.10 or newer**.
+- At least one LabConstrictor app installed on your computer (the [apps that work in napari](https://labconstrictor.cellmig.org/apps/?host=napari) are listed in the App Centre). Installing the app and installing this plugin are two separate steps: the app's installer registers it on your computer, which is how the plugin finds it.
 
 ## Install
 
-In the environment where napari runs, install the tools runtime and then the plugin:
+Run these commands in the same environment you start napari from. If you start napari from a terminal after `conda activate <name>` (or after activating a virtual environment), activate that environment first. If you installed napari with its desktop installer, follow [napari](https://napari.org)'s instructions for adding packages to that installation. Then install the tools runtime and the plugin:
 
     pip install https://github.com/CellMigrationLab/LabConstrictor-Tools/archive/refs/heads/main.zip
     pip install https://github.com/CellMigrationLab/napari-labconstrictor/archive/refs/heads/main.zip
