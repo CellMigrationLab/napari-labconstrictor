@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=https://labconstrictor.cellmig.org/schema/labconstrictor-project.schema.json
+# How this project is listed on the LabConstrictor website's Ecosystem page. Keep the status true.
+name: napari
+summary: 'One dock widget for every installed LabConstrictor app: pick an app and a tool, and the form is generated from the tool''s declared schema.'
+status: Experimental
